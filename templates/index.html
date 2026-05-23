@@ -1,0 +1,406 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>智能体评分系统</title>
+  <link rel="stylesheet" href="/static/app.css">
+</head>
+<body>
+  <section class="auth-screen" id="auth-screen" hidden>
+    <div class="auth-layout">
+      <section class="panel auth-hero">
+        <div class="eyebrow light"></div>
+        <div class="brand-mark auth-brand">智能体评分系统</div>
+        <div class="brand-meta auth-brand-meta">AI Scoring · Flask · Cookie Session</div>
+        <h1 class="auth-title">需要登录时再进行认证</h1>
+        <p class="auth-copy">
+          你可以先浏览主界面、填写评分信息；当你准备提交评分、查看自己的历史记录或导出报告时，再通过右上角入口完成登录或注册。
+        </p>
+        <ul class="auth-points">
+          <li>同源 HttpOnly Cookie 会话，不把 token 暴露到前端脚本。</li>
+          <li>历史、详情与导出严格按当前登录用户隔离。</li>
+          <li>保持现有紫橙风格和单体页面结构，不切到新框架。</li>
+          <li>支持忘记密码和重置密码，邮件链接会直接带入重置视图。</li>
+        </ul>
+      </section>
+
+      <section class="panel auth-card">
+        <div class="auth-card-head">
+          <div>
+            <div class="eyebrow"></div>
+            <h2>账户访问</h2>
+            <p>使用邮箱完成注册、登录、找回密码与重置密码。</p>
+          </div>
+          <button class="auth-close" type="button" id="auth-close-button" aria-label="关闭认证面板">×</button>
+          <div class="auth-tabs" role="tablist" aria-label="认证视图切换">
+            <button class="auth-tab active" type="button" data-auth-mode="login">登录</button>
+            <button class="auth-tab" type="button" data-auth-mode="register">注册</button>
+            <button class="auth-tab" type="button" data-auth-mode="forgot">忘记密码</button>
+            <button class="auth-tab" type="button" data-auth-mode="reset">重置密码</button>
+          </div>
+        </div>
+
+        <div class="inline-alert auth-message" id="auth-message" hidden></div>
+
+        <form id="login-form" class="auth-form auth-pane active" data-auth-pane="login" autocomplete="on">
+          <label class="field">
+            <span>邮箱</span>
+            <input type="email" id="login-email" name="email" placeholder="name@example.com" autocomplete="email" required>
+          </label>
+          <label class="field">
+            <span>密码</span>
+            <input type="password" id="login-password" name="password" placeholder="请输入密码" autocomplete="current-password" required>
+          </label>
+          <div class="auth-actions">
+            <button class="btn btn-primary" type="submit">登录</button>
+            <button class="btn btn-secondary" type="button" data-jump-auth="register">去注册</button>
+          </div>
+          <div class="auth-links">
+            <button class="auth-link" type="button" data-jump-auth="forgot">忘记密码</button>
+          </div>
+        </form>
+
+        <form id="register-form" class="auth-form auth-pane" data-auth-pane="register" autocomplete="on" hidden>
+          <label class="field">
+            <span>邮箱</span>
+            <input type="email" id="register-email" name="email" placeholder="name@example.com" autocomplete="email" required>
+          </label>
+          <label class="field">
+            <span>显示名称</span>
+            <input type="text" id="register-display-name" name="display_name" placeholder="用于页面展示" autocomplete="nickname" required>
+          </label>
+          <label class="field">
+            <span>密码</span>
+            <input type="password" id="register-password" name="password" placeholder="至少 8 位" autocomplete="new-password" required>
+          </label>
+          <div class="auth-actions">
+            <button class="btn btn-primary" type="submit">注册并进入</button>
+            <button class="btn btn-secondary" type="button" data-jump-auth="login">返回登录</button>
+          </div>
+        </form>
+
+        <form id="forgot-form" class="auth-form auth-pane" data-auth-pane="forgot" autocomplete="on" hidden>
+          <label class="field">
+            <span>邮箱</span>
+            <input type="email" id="forgot-email" name="email" placeholder="name@example.com" autocomplete="email" required>
+          </label>
+          <p class="auth-note">提交后系统会发送密码重置邮件；前端始终显示统一提示，不暴露邮箱是否已注册。</p>
+          <div class="auth-actions">
+            <button class="btn btn-primary" type="submit">发送重置邮件</button>
+            <button class="btn btn-secondary" type="button" data-jump-auth="login">返回登录</button>
+          </div>
+        </form>
+
+        <form id="auth-reset-form" class="auth-form auth-pane" data-auth-pane="reset" autocomplete="on" hidden>
+          <div class="reset-hint" id="reset-token-hint">如果你是从邮件链接进入，这里会自动带入重置 token。</div>
+          <label class="field">
+            <span>新密码</span>
+            <input type="password" id="reset-password" name="password" placeholder="请输入新密码" autocomplete="new-password" required>
+          </label>
+          <div class="auth-actions">
+            <button class="btn btn-primary" type="submit">重置密码</button>
+            <button class="btn btn-secondary" type="button" data-jump-auth="login">返回登录</button>
+          </div>
+        </form>
+      </section>
+    </div>
+  </section>
+
+  <div class="app-shell" id="app-shell">
+    <aside class="sidebar">
+      <div class="sidebar-brand">
+        <div class="brand-mark">智能体评分<br>系统</div>
+        <div class="brand-meta">AI Scoring · Flask</div>
+      </div>
+      <nav class="sidebar-nav" aria-label="主导航">
+        <button class="nav-item active" type="button" data-page="score">
+          <span class="nav-icon" aria-hidden="true">+</span>
+          <span>新建评分</span>
+        </button>
+        <button class="nav-item" type="button" data-page="result">
+          <span class="nav-icon" aria-hidden="true">◎</span>
+          <span>评分结果</span>
+        </button>
+        <button class="nav-item" type="button" data-page="history">
+          <span class="nav-icon" aria-hidden="true">▣</span>
+          <span>评分历史</span>
+          <span class="nav-badge" id="history-count">0</span>
+        </button>
+      </nav>
+      <div class="sidebar-footer">
+        <span>登录态受同源 Cookie 保护</span>
+        <span id="sidebar-user-summary">当前为游客模式，可先浏览主界面</span>
+      </div>
+    </aside>
+
+    <main class="main">
+      <header class="topbar">
+        <div>
+          <div class="topbar-title" id="topbar-title">新建评分</div>
+          <div class="topbar-subtitle" id="topbar-subtitle">提交汇报材料，生成结构化评分报告</div>
+        </div>
+        <div class="topbar-actions">
+          <span class="status-chip" id="session-chip"><i></i><span id="session-chip-text">会话校验中</span></span>
+          <div class="user-chip">
+            <div class="user-chip-label">当前用户</div>
+            <strong id="current-user-name">--</strong>
+          </div>
+          <button class="btn btn-primary btn-sm" type="button" id="auth-entry-button">登录 / 注册</button>
+          <button class="btn btn-ghost btn-sm" type="button" id="topbar-refresh-history">刷新历史</button>
+          <button class="btn btn-secondary btn-sm" type="button" id="logout-button" hidden>退出</button>
+        </div>
+      </header>
+
+      <div class="inline-alert app-notice" id="app-notice" hidden></div>
+
+      <section class="page active" id="page-score" aria-labelledby="score-title">
+        <div class="page-head">
+          <div class="eyebrow"></div>
+          <h1 id="score-title">新建评分任务</h1>
+          <p>上传汇报 PDF 和可选转写文本，按规则生成结构化评分结果，并支持导出 Markdown。</p>
+        </div>
+
+        <div class="grid two-col">
+          <section class="panel">
+            <div class="panel-head">
+              <div>
+                <h2>基础信息</h2>
+                <p>字段会按后端接口原样提交，便于直接对接。</p>
+              </div>
+            </div>
+            <div class="panel-body">
+              <form id="score-form" class="form-grid" autocomplete="off">
+                <label class="field">
+                  <span>姓名 <em>*</em></span>
+                  <input type="text" name="name" id="field-name" placeholder="请输入姓名">
+                </label>
+                <label class="field">
+                  <span>所属组织 / 部门 <em>*</em></span>
+                  <input type="text" name="org" id="field-org" placeholder="例如：战略发展部">
+                </label>
+                <label class="field">
+                  <span>汇报类型 <em>*</em></span>
+                  <select name="report_type" id="field-report-type">
+                    <option value="">请选择</option>
+                    <option value="温故知新">温故知新</option>
+                    <option value="行动学习">行动学习</option>
+                  </select>
+                </label>
+                <label class="field">
+                  <span>评分日期 <em>*</em></span>
+                  <input type="date" name="date" id="field-date">
+                </label>
+                <label class="field full">
+                  <span>备注</span>
+                  <textarea name="note" id="field-note" rows="4" placeholder="可填写补充说明、人工校对建议或特殊情况说明"></textarea>
+                </label>
+              </form>
+            </div>
+          </section>
+
+          <aside class="panel">
+            <div class="panel-head">
+              <div>
+                <h2>材料上传</h2>
+                <p>支持 PDF 主文稿和可选 TXT 转写文本。</p>
+              </div>
+            </div>
+            <div class="panel-body stacked">
+              <label class="dropzone" id="pdf-zone">
+                <input type="file" accept=".pdf,application/pdf" id="field-pdf" name="pdf_file">
+                <div class="dropzone-icon">PDF</div>
+                <div class="dropzone-title">拖拽上传或点击选择 PDF</div>
+                <div class="dropzone-hint">单文件 ≤ 20MB，优先使用文字版 PDF</div>
+                <div class="file-meta" id="pdf-meta">尚未选择文件</div>
+              </label>
+
+              <label class="dropzone" id="transcript-zone">
+                <input type="file" accept=".txt,text/plain" id="field-transcript-file">
+                <div class="dropzone-icon alt">TXT</div>
+                <div class="dropzone-title">可选上传转写文本</div>
+                <div class="dropzone-hint">后端若未接入录音，也可直接提交空文本</div>
+                <div class="file-meta" id="transcript-meta">可直接粘贴到下方文本框</div>
+              </label>
+
+              <label class="field">
+                <span>转写文本 / 补充说明</span>
+                <textarea name="transcript" id="field-transcript" rows="7" placeholder="如已有转写文本，可在此粘贴；没有录音可留空"></textarea>
+              </label>
+
+              <div class="action-row">
+                <button class="btn btn-primary" type="button" id="submit-score">开始评分</button>
+                <button class="btn btn-secondary" type="button" id="reset-form">重置</button>
+              </div>
+            </div>
+          </aside>
+        </div>
+
+        <div class="panel loading-panel" id="loading-panel" aria-live="polite" aria-hidden="true">
+          <div class="spinner"></div>
+          <div class="loading-text">智能体正在评分中</div>
+          <div class="loading-sub" id="loading-subtitle">正在准备提交材料</div>
+          <div class="progress-track"><div class="progress-fill" id="loading-progress"></div></div>
+        </div>
+      </section>
+
+      <section class="page" id="page-result" aria-labelledby="result-title">
+        <div class="breadcrumb" id="result-breadcrumb" hidden>
+          <span id="breadcrumb-name">历史报告</span>
+          <span>·</span>
+          <span id="breadcrumb-date"></span>
+        </div>
+
+        <section class="result-hero panel">
+          <div class="result-hero-main">
+            <div class="eyebrow light"></div>
+            <div class="result-meta" id="result-meta">--</div>
+            <h1 id="result-title">评分结果</h1>
+            <div class="result-person" id="result-person">--</div>
+            <p class="result-overview" id="result-overview">提交后将在这里显示总评摘要。</p>
+          </div>
+          <div class="result-score-card">
+            <div class="score-label">总分</div>
+            <div class="score-value" id="result-total-score">--</div>
+            <div class="score-level" id="result-level">--</div>
+            <div class="score-note" id="result-created-at"></div>
+          </div>
+        </section>
+
+        <div class="result-stats">
+          <div class="stat-card panel">
+            <div class="stat-title">文档均分</div>
+            <div class="stat-value" id="result-doc-avg">--</div>
+          </div>
+          <div class="stat-card panel">
+            <div class="stat-title">录音均分</div>
+            <div class="stat-value" id="result-audio-avg">--</div>
+          </div>
+          <div class="stat-card panel">
+            <div class="stat-title">最低维度</div>
+            <div class="stat-value small" id="result-lowest">--</div>
+          </div>
+          <div class="stat-card panel">
+            <div class="stat-title">评分来源</div>
+            <div class="stat-value small" id="result-source">--</div>
+          </div>
+        </div>
+
+        <div class="grid result-grid">
+          <section class="panel">
+            <div class="panel-head">
+              <div>
+                <h2>一级维度明细</h2>
+                <p>按一级维度分组展开，展示分数、等级、证据与评语。</p>
+              </div>
+            </div>
+            <div class="panel-body" id="result-dimensions"></div>
+          </section>
+
+          <aside class="panel result-side">
+            <div class="panel-head">
+              <div>
+                <h2>结论与建议</h2>
+                <p>用于页面展示与 Markdown 导出。</p>
+              </div>
+            </div>
+            <div class="panel-body stack">
+              <div>
+                <div class="side-title">总评</div>
+                <div class="side-copy" id="result-comment">--</div>
+              </div>
+              <div>
+                <div class="side-title">优势亮点</div>
+                <ul class="bullet-list" id="result-strengths"></ul>
+              </div>
+              <div>
+                <div class="side-title">改进建议</div>
+                <ul class="bullet-list" id="result-improvements"></ul>
+              </div>
+              <div class="disclaimer">
+                <div class="side-title">免责声明</div>
+                <p id="result-disclaimer">本报告由系统自动生成，仅供参考，最终结论以人工审核为准。</p>
+              </div>
+            </div>
+          </aside>
+        </div>
+
+        <div class="export-bar panel">
+          <div class="export-info">
+            <strong id="export-person">--</strong>
+            <span id="export-hint">评分结果生成后，可导出 Markdown 或返回历史继续查看。</span>
+          </div>
+          <div class="action-row">
+            <button class="btn btn-secondary" type="button" id="back-to-history">返回历史</button>
+            <button class="btn btn-ghost" type="button" id="new-score">新建评分</button>
+            <button class="btn btn-primary" type="button" id="export-md">导出 Markdown</button>
+          </div>
+        </div>
+      </section>
+
+      <section class="page" id="page-history" aria-labelledby="history-title">
+        <div class="page-head">
+          <div class="eyebrow"></div>
+          <h1 id="history-title">评分历史</h1>
+          <p>历史列表优先调用 `GET /api/scores`，点击任意记录可回看详情并导出。</p>
+        </div>
+
+        <div class="history-toolbar">
+          <div class="history-summary panel">
+            <div class="summary-label">历史记录</div>
+            <div class="summary-value" id="history-summary-count">0</div>
+          </div>
+          <div class="history-summary panel">
+            <div class="summary-label">最近评分</div>
+            <div class="summary-value small" id="history-summary-latest">--</div>
+          </div>
+          <div class="history-summary panel">
+            <div class="summary-label">平均总分</div>
+            <div class="summary-value" id="history-summary-avg">--</div>
+          </div>
+          <div class="history-summary panel">
+            <div class="summary-label">AI vs 人工（待接入）</div>
+            <div class="summary-value small" id="history-summary-gap">--</div>
+          </div>
+        </div>
+
+        <section class="panel table-panel">
+          <div class="panel-head">
+            <div>
+              <h2>评分列表</h2>
+              <p>表格展示支持查看报告与历史回看。</p>
+            </div>
+            <button class="btn btn-ghost btn-sm" type="button" id="history-reload">重新加载</button>
+          </div>
+          <div class="panel-body">
+            <div class="table-wrap">
+              <table class="history-table">
+                <thead>
+                  <tr>
+                    <th>被评分人</th>
+                    <th>所属组织</th>
+                    <th>汇报类型</th>
+                    <th>AI 总分</th>
+                    <th>人工均分（待接入）</th>
+                    <th>评分日期</th>
+                    <th>操作</th>
+                  </tr>
+                </thead>
+                <tbody id="history-tbody"></tbody>
+              </table>
+            </div>
+            <div class="empty-state" id="history-empty" hidden>
+              <div class="empty-icon">▣</div>
+              <h3>暂无历史记录</h3>
+              <p>当前账号还没有可查看的评分记录。</p>
+              <button class="btn btn-primary" type="button" id="empty-new-score">去新建评分</button>
+            </div>
+          </div>
+        </section>
+      </section>
+    </main>
+  </div>
+
+  <script src="/static/app.js"></script>
+</body>
+</html>
