@@ -1,0 +1,71 @@
+{
+  "score_id": "fixture-score-001",
+  "user_id": "fixture-user",
+  "name": "王晓晨",
+  "org": "培训交付中心",
+  "report_type": "温故知新",
+  "date": "2026-05-25",
+  "note": "真实样例测试数据",
+  "pdf_filename": "real_submission_report.pdf",
+  "upload_path": "uploads/real_submission_report.pdf",
+  "document_preview": "温故知新个人汇报样例材料\n本次复盘围绕年度战略目标、组织痛点、关键任务推进与结果改善展开。\n我先说明业务背景，再展示问题分析、行动步骤、协同节点与阶段成效。\n课题立项部分聚焦组织效率、关键指标提升与资源规划安排。\n行动结果包括流程时长下降18%，跨团队协同效率提升22%，客户满意度提升9%。\n复盘部分同时补充不足、改进路径、后续迭代节奏与里程碑安排。\n汇报材料强调目标、规划、行动、结果、反思、创新与突破。",
+  "transcript_present": true,
+  "total_score": 85.1,
+  "total_level": "优秀",
+  "doc_average": 8.7,
+  "audio_average": 8.0,
+  "lowest_dimension": {
+    "name": "逻辑的严谨性和链条完整性",
+    "score": 8.0
+  },
+  "overall_comment": "整体表现稳健，文档结构完整，汇报逻辑清晰，建议继续补强低分维度的链条细节。",
+  "strengths": [
+    "战略链接与价值认知表现较强。",
+    "知识融合与框架应用较为完整。",
+    "整体材料对关键行动和结果支撑充分。"
+  ],
+  "improvements": [
+    "逻辑的严谨性和链条完整性仍可继续补充。",
+    "可进一步强化案例证据与量化结果的对应关系。"
+  ],
+  "disclaimer": "本报告由 AI 智能体自动生成，仅供参考，最终评定以培训导师意见为准。",
+  "created_at": "2026-05-25T10:00:00Z",
+  "dimensions": [
+    {
+      "id": 1,
+      "name": "战略链接与价值认知",
+      "group_name": "温故·实战复盘",
+      "group_weight": 55.0,
+      "actual_weight": 5.5,
+      "material_source": "文档",
+      "score": 8.8,
+      "level_label": "优秀",
+      "evidence": "材料中说明了目标、行动与结果之间的链路。",
+      "comment": "该维度支撑较强，能够说明战略价值与任务连接。"
+    },
+    {
+      "id": 2,
+      "name": "知识融合与框架应用",
+      "group_name": "温故·实战复盘",
+      "group_weight": 55.0,
+      "actual_weight": 8.25,
+      "material_source": "文档",
+      "score": 8.6,
+      "level_label": "优秀",
+      "evidence": "文档展示了框架应用、问题分析与方案协同方式。",
+      "comment": "该维度结构清晰，工具与方法使用较为完整。"
+    },
+    {
+      "id": 9,
+      "name": "逻辑的严谨性和链条完整性",
+      "group_name": "逻辑性与展现力",
+      "group_weight": 20.0,
+      "actual_weight": 2.0,
+      "material_source": "录音转写",
+      "score": 8.0,
+      "level_label": "优秀",
+      "evidence": "转写中对汇报顺序、重点和总结表达较为清楚。",
+      "comment": "该维度表达顺畅，但仍可补充更多逻辑链条细节。"
+    }
+  ]
+}

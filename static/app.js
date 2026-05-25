@@ -9,6 +9,7 @@ const API = {
   scores: "/api/scores",
   scoreDetail: (id) => `/api/scores/${encodeURIComponent(id)}`,
   exportMd: (id) => `/api/scores/${encodeURIComponent(id)}/export?format=md`,
+  exportPdf: (id) => `/api/scores/${encodeURIComponent(id)}/export?format=pdf`,
 };
 
 const AUTH_MODES = ["login", "register", "forgot", "reset"];
@@ -115,6 +116,7 @@ function cacheElements() {
     "result-improvements",
     "result-disclaimer",
     "export-person",
+    "export-pdf",
     "export-md",
     "back-to-history",
     "new-score",
@@ -164,6 +166,7 @@ function bindEvents() {
   });
   els.submitScore.addEventListener("click", submitScore);
   els.resetForm.addEventListener("click", resetScoreForm);
+  els.exportPdf.addEventListener("click", exportPdf);
   els.exportMd.addEventListener("click", exportMarkdown);
   els.backToHistory.addEventListener("click", () => showPage("history"));
   els.newScore.addEventListener("click", () => showPage("score"));
@@ -798,6 +801,7 @@ function renderHistory(list) {
           <td>
             <div class="history-action">
               <button class="btn btn-ghost btn-sm" type="button" data-history-view="${escapeAttr(item.id)}">查看报告</button>
+              <button class="btn btn-ghost btn-sm" type="button" data-history-export-pdf="${escapeAttr(item.id)}">导出 PDF</button>
               <button class="btn btn-secondary btn-sm" type="button" data-history-export="${escapeAttr(item.id)}">导出 MD</button>
             </div>
           </td>
@@ -811,6 +815,9 @@ function renderHistory(list) {
   });
   els.historyTbody.querySelectorAll("[data-history-export]").forEach((button) => {
     button.addEventListener("click", () => exportHistoryMarkdown(button.dataset.historyExport));
+  });
+  els.historyTbody.querySelectorAll("[data-history-export-pdf]").forEach((button) => {
+    button.addEventListener("click", () => exportHistoryPdf(button.dataset.historyExportPdf));
   });
 }
 
@@ -878,6 +885,14 @@ async function viewHistory(id) {
 }
 
 async function exportMarkdown() {
+  await exportCurrentScoreFile("md");
+}
+
+async function exportPdf() {
+  await exportCurrentScoreFile("pdf");
+}
+
+async function exportCurrentScoreFile(format) {
   if (!state.authed) {
     promptLogin("登录后可导出评分报告。");
     return;
@@ -890,10 +905,10 @@ async function exportMarkdown() {
   }
 
   try {
-    const blob = await fetchProtectedBlob(API.exportMd(score.id), {
-      headers: { Accept: "text/markdown,*/*" },
+    const blob = await fetchProtectedBlob(getExportUrl(format, score.id), {
+      headers: { Accept: exportAcceptHeader(format) },
     });
-    downloadBlob(blob, getDownloadName(score, "md"));
+    downloadBlob(blob, getDownloadName(score, format));
   } catch (error) {
     if (isAuthError(error)) {
       handleAuthFailure();
@@ -904,21 +919,29 @@ async function exportMarkdown() {
 }
 
 async function exportHistoryMarkdown(id) {
+  await exportHistoryScoreFile(id, "md");
+}
+
+async function exportHistoryPdf(id) {
+  await exportHistoryScoreFile(id, "pdf");
+}
+
+async function exportHistoryScoreFile(id, format) {
   if (!state.authed) {
     promptLogin("如需导出历史报告，请先登录。");
     return;
   }
 
   try {
-    const blob = await fetchProtectedBlob(API.exportMd(id), {
-      headers: { Accept: "text/markdown,*/*" },
+    const blob = await fetchProtectedBlob(getExportUrl(format, id), {
+      headers: { Accept: exportAcceptHeader(format) },
     });
     const item = state.history.find((entry) => String(entry.id) === String(id));
     downloadBlob(
       blob,
       getDownloadName(
         item || { name: `history_${id}`, reportType: "report", date: "" },
-        "md"
+        format
       )
     );
   } catch (error) {
@@ -1344,6 +1367,14 @@ function formatWeight(value) {
     return `${value}%`;
   }
   return String(value).includes("%") ? String(value) : `${value}%`;
+}
+
+function getExportUrl(format, id) {
+  return format === "pdf" ? API.exportPdf(id) : API.exportMd(id);
+}
+
+function exportAcceptHeader(format) {
+  return format === "pdf" ? "application/pdf,*/*" : "text/markdown,*/*";
 }
 
 function getDownloadName(score, ext) {

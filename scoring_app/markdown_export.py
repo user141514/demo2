@@ -17,7 +17,7 @@ def build_markdown(result):
         "| 所属组织/部门 | {} |".format(result["org"]),
         "| 汇报类型 | {} |".format(result["report_type"]),
         "| 评分日期 | {} |".format(result["date"]),
-        "| 备注 | {} |".format(result["note"] or "—"),
+        "| 备注 | {} |".format(result["note"] or "--"),
         "",
         "---",
         "",
@@ -50,9 +50,9 @@ def build_markdown(result):
                 [
                     "#### {}  {}".format(dimension["name"], score_label),
                     "",
-                    "**评分依据：** {}".format(dimension["evidence"] or "—"),
+                    "**评分依据：** {}".format(dimension["evidence"] or "--"),
                     "",
-                    "**维度评价：** {}".format(dimension["comment"] or "—"),
+                    "**维度评价：** {}".format(dimension["comment"] or "--"),
                     "",
                 ]
             )

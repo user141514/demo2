@@ -494,6 +494,7 @@ def get_score_detail(score_id, user_id):
             "improvements": json.loads(row["improvements_json"]),
             "disclaimer": row["disclaimer"],
             "markdown_export_url": "/api/scores/{}/export?format=md".format(row["score_id"]),
+            "pdf_export_url": "/api/scores/{}/export?format=pdf".format(row["score_id"]),
             "dimensions": [
                 {
                     "id": dimension["dimension_id"],

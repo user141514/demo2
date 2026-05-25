@@ -20,7 +20,7 @@ set "SCORING_APP_DEBUG=0"
 set "SCORING_APP_HOST=127.0.0.1"
 set "SCORING_APP_PORT=5000"
 
-python -c "import flask, openai, requests" >nul 2>&1
+python -c "import flask, openai, requests, PIL" >nul 2>&1
 if errorlevel 1 (
   echo [INFO] Installing missing runtime dependencies into rag-env...
   python -m pip install -r "%ROOT_DIR%requirements.txt"

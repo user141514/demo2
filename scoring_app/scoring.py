@@ -30,7 +30,7 @@ def score_submission(report_type, document_text, transcript_text, metadata):
         scoring_mode = live_payload.get("mode", "live")
         llm_provider = live_payload.get("provider", "")
         llm_model = live_payload.get("model", "")
-    except LiveScoringError:
+    except Exception:
         dimension_results = _build_heuristic_dimensions(
             definition=definition,
             document_text=document_text,
