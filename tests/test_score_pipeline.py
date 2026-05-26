@@ -39,19 +39,11 @@ class ScorePipelineTestCase(unittest.TestCase):
         shutil.rmtree(self.temp_dir, ignore_errors=True)
 
     def test_authenticated_score_submission_history_detail_and_export_flow(self):
-        register_response = self.client.post(
-            "/api/auth/register",
-            json={
-                "email": "flow@example.com",
-                "display_name": "Flow User",
-                "password": "Passw0rd!",
-            },
-        )
-        self.assertEqual(register_response.status_code, 201)
+        self._register_flow_user()
 
         with patch(
             "scoring_app.services.score_service.extract_text_from_pdf_bytes",
-            return_value=("这是一份完整的文档内容，用于测试评分通路是否完备。") * 8,
+            return_value=("This is a complete document body used to verify the score pipeline. " * 8),
         ), patch(
             "scoring_app.services.score_service.score_submission",
             return_value=self._build_score_result(),
@@ -59,12 +51,12 @@ class ScorePipelineTestCase(unittest.TestCase):
             create_response = self.client.post(
                 "/api/score",
                 data={
-                    "name": "测试学员",
-                    "org": "交付一部",
+                    "name": "Pipeline Student",
+                    "org": "Delivery Team",
                     "report_type": self.report_type,
                     "date": "2026-05-24",
-                    "note": "通路测试",
-                    "transcript": "这是录音转写内容，用于验证文档和录音双材料评分流程。",
+                    "note": "Pipeline smoke test",
+                    "transcript": "This transcript is used to validate the end-to-end score flow.",
                     "pdf_file": (BytesIO(b"%PDF-1.4 test content"), "report.pdf"),
                 },
                 content_type="multipart/form-data",
@@ -73,8 +65,8 @@ class ScorePipelineTestCase(unittest.TestCase):
         self.assertEqual(create_response.status_code, 200)
         score_payload = create_response.get_json()
         score_id = score_payload["score_id"]
-        self.assertEqual(score_payload["name"], "测试学员")
-        self.assertEqual(score_payload["org"], "交付一部")
+        self.assertEqual(score_payload["name"], "Pipeline Student")
+        self.assertEqual(score_payload["org"], "Delivery Team")
         self.assertEqual(
             score_payload["markdown_export_url"],
             "/api/scores/{}/export?format=md".format(score_id),
@@ -99,23 +91,18 @@ class ScorePipelineTestCase(unittest.TestCase):
         self.assertEqual(len(detail_payload["dimensions"]), 3)
         self.assertTrue(detail_payload["transcript_present"])
 
-        export_response = self.client.get(
-            "/api/scores/{}/export?format=md".format(score_id)
-        )
+        markdown_response = self.client.get("/api/scores/{}/export?format=md".format(score_id))
         try:
-            self.assertEqual(export_response.status_code, 200)
-            self.assertIn("text/markdown", export_response.headers["Content-Type"])
-            self.assertIn(".md", export_response.headers["Content-Disposition"])
-            export_text = export_response.get_data(as_text=True)
-            self.assertIn("测试学员", export_text)
-            self.assertIn(self.report_type, export_text)
-            self.assertIn("综合表现稳健", export_text)
+            self.assertEqual(markdown_response.status_code, 200)
+            self.assertIn("text/markdown", markdown_response.headers["Content-Type"])
+            self.assertIn(".md", markdown_response.headers["Content-Disposition"])
+            export_text = markdown_response.get_data(as_text=True)
+            self.assertIn("Pipeline Student", export_text)
+            self.assertIn("Overall performance is steady", export_text)
         finally:
-            export_response.close()
+            markdown_response.close()
 
-        pdf_response = self.client.get(
-            "/api/scores/{}/export?format=pdf".format(score_id)
-        )
+        pdf_response = self.client.get("/api/scores/{}/export?format=pdf".format(score_id))
         try:
             self.assertEqual(pdf_response.status_code, 200)
             self.assertEqual(pdf_response.headers["Content-Type"], "application/pdf")
@@ -130,37 +117,142 @@ class ScorePipelineTestCase(unittest.TestCase):
         self.assertEqual(logout_response.status_code, 200)
         self.assertEqual(self.client.get("/api/scores").status_code, 401)
 
+    def test_garbled_inline_transcript_falls_back_to_uploaded_file_text(self):
+        self._register_flow_user(email="fallback@example.com", display_name="Fallback User")
+        captured = {}
+
+        def fake_score_submission(report_type, document_text, transcript_text, metadata):
+            captured["transcript_text"] = transcript_text
+            return self._build_score_result(score_id="pipeline-score-002")
+
+        clean_transcript = "第一段说明当前问题。\n第二段说明后续行动。".encode("gb18030")
+        with patch(
+            "scoring_app.services.score_service.extract_text_from_pdf_bytes",
+            return_value=("This is a complete document body used to verify transcript fallback. " * 8),
+        ), patch(
+            "scoring_app.services.score_service.score_submission",
+            side_effect=fake_score_submission,
+        ):
+            response = self.client.post(
+                "/api/score",
+                data={
+                    "name": "Transcript Fallback",
+                    "org": "Delivery Team",
+                    "report_type": self.report_type,
+                    "date": "2026-05-24",
+                    "note": "Encoding fallback",
+                    "transcript": "閿焃 閸?鐠?閺?閻?瑜?",
+                    "transcript_file": (BytesIO(clean_transcript), "transcript.txt"),
+                    "pdf_file": (BytesIO(b"%PDF-1.4 test content"), "report.pdf"),
+                },
+                content_type="multipart/form-data",
+            )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertIn("第一段", captured["transcript_text"])
+        self.assertIn("第二段", captured["transcript_text"])
+
+    def test_history_and_exports_survive_restart_without_upload_directory(self):
+        self._register_flow_user(email="restart@example.com", display_name="Restart User")
+
+        with patch(
+            "scoring_app.services.score_service.extract_text_from_pdf_bytes",
+            return_value=("This is a complete document body used to verify persistence. " * 8),
+        ), patch(
+            "scoring_app.services.score_service.score_submission",
+            return_value=self._build_score_result(score_id="pipeline-score-003"),
+        ):
+            create_response = self.client.post(
+                "/api/score",
+                data={
+                    "name": "Restart Student",
+                    "org": "Delivery Team",
+                    "report_type": self.report_type,
+                    "date": "2026-05-24",
+                    "note": "Restart persistence",
+                    "transcript": "Transcript for persistence verification.",
+                    "pdf_file": (BytesIO(b"%PDF-1.4 test content"), "report.pdf"),
+                },
+                content_type="multipart/form-data",
+            )
+
+        self.assertEqual(create_response.status_code, 200)
+        score_id = create_response.get_json()["score_id"]
+        shutil.rmtree(self.upload_dir, ignore_errors=True)
+
+        restarted_app = create_app()
+        restarted_app.testing = True
+        restarted_client = restarted_app.test_client()
+        login_response = restarted_client.post(
+            "/api/auth/login",
+            json={"email": "restart@example.com", "password": "Passw0rd!"},
+        )
+        self.assertEqual(login_response.status_code, 200)
+
+        history_response = restarted_client.get("/api/scores")
+        self.assertEqual(history_response.status_code, 200)
+        history_items = history_response.get_json()["items"]
+        self.assertEqual(len(history_items), 1)
+        self.assertEqual(history_items[0]["score_id"], score_id)
+
+        markdown_response = restarted_client.get("/api/scores/{}/export?format=md".format(score_id))
+        try:
+            self.assertEqual(markdown_response.status_code, 200)
+            self.assertIn("text/markdown", markdown_response.headers["Content-Type"])
+        finally:
+            markdown_response.close()
+
+        pdf_response = restarted_client.get("/api/scores/{}/export?format=pdf".format(score_id))
+        try:
+            self.assertEqual(pdf_response.status_code, 200)
+            self.assertEqual(pdf_response.headers["Content-Type"], "application/pdf")
+            self.assertTrue(pdf_response.get_data().startswith(b"%PDF"))
+        finally:
+            pdf_response.close()
+
     def _find_report_type(self, definition_id):
         for report_type, definition in REPORT_DEFINITIONS.items():
             if definition["id"] == definition_id:
                 return report_type
         raise AssertionError("Missing report definition id: {}".format(definition_id))
 
-    def _build_score_result(self):
+    def _register_flow_user(self, email="flow@example.com", display_name="Flow User"):
+        register_response = self.client.post(
+            "/api/auth/register",
+            json={
+                "email": email,
+                "display_name": display_name,
+                "password": "Passw0rd!",
+            },
+        )
+        self.assertEqual(register_response.status_code, 201)
+        return register_response.get_json()["user"]
+
+    def _build_score_result(self, score_id="pipeline-score-001"):
         dimensions = self.report_definition["dimensions"]
         selected = [dimensions[0], dimensions[5], dimensions[8]]
         scores = [8.8, 8.1, 7.9]
         comments = [
-            "该维度材料支撑充分，论证链路完整。",
-            "该维度目标说明明确，具备较强的推进价值。",
-            "该维度表达清楚，但还能补充更多链条细节。",
+            "Strong support from the submitted material.",
+            "The goal and business value are described clearly.",
+            "The expression is clear but could use more chain detail.",
         ]
         evidence = [
-            "材料中明确说明了目标、动作与结果之间的关系。",
-            "文档对课题价值与组织收益给出了直接说明。",
-            "录音转写中对汇报顺序和关键结论有清晰表达。",
+            "The material explains the link between goals, actions, and outcomes.",
+            "The document gives a direct explanation of topic value and team impact.",
+            "The transcript describes sequence, highlights, and a conclusion clearly.",
         ]
 
         return {
-            "score_id": "pipeline-score-001",
-            "name": "测试学员",
-            "org": "交付一部",
+            "score_id": score_id,
+            "name": "Pipeline Student",
+            "org": "Delivery Team",
             "report_type": self.report_type,
             "date": "2026-05-24",
-            "note": "通路测试",
+            "note": "Pipeline smoke test",
             "pdf_filename": "report.pdf",
-            "upload_path": "uploads/report.pdf",
-            "document_preview": "测试文档预览",
+            "upload_path": "db://score_artifacts/{}/source_pdf".format(score_id),
+            "document_preview": "Pipeline preview",
             "transcript_present": True,
             "created_at": "2026-05-24T10:00:00Z",
             "total_score": 84.2,
@@ -168,10 +260,10 @@ class ScorePipelineTestCase(unittest.TestCase):
             "doc_average": 8.5,
             "audio_average": 7.9,
             "lowest_dimension": {"name": selected[-1]["name"], "score": scores[-1]},
-            "overall_comment": "综合表现稳健，结构清晰，建议继续补强低分维度的细节证据。",
-            "strengths": ["战略链接与价值认知表现较强。", "课题的战略价值说明充分。"],
-            "improvements": ["逻辑的严谨性和链条完整性仍可继续补充。"],
-            "disclaimer": "本报告由 AI 智能体自动生成，仅供参考，最终评定以培训导师意见为准。",
+            "overall_comment": "Overall performance is steady and the structure is clear.",
+            "strengths": ["Clear structure", "Strong business alignment"],
+            "improvements": ["Add more direct evidence"],
+            "disclaimer": "Test disclaimer",
             "dimensions": [
                 {
                     "id": dimension["id"],

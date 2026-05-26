@@ -2,7 +2,6 @@ import os
 import shutil
 import tempfile
 import unittest
-from pathlib import Path
 
 from scoring_app import create_app
 from scoring_app.repository import create_user, store_score
@@ -53,27 +52,25 @@ class ScoreExportFormatsTestCase(unittest.TestCase):
 
         self.assertEqual(export_info["mimetype"], "text/markdown; charset=utf-8")
         self.assertTrue(export_info["filename"].endswith(".md"))
-
-        export_path = Path(export_info["file_path"])
-        self.assertTrue(export_path.exists())
-
-        markdown = export_path.read_text(encoding="utf-8")
+        markdown = export_info["content"].decode("utf-8")
         self.assertIn(str(self.score_result["name"]), markdown)
         self.assertIn(str(self.score_result["report_type"]), markdown)
         self.assertIn(str(self.score_result["total_score"]), markdown)
+
+        cached_export = build_score_export(self.score_id, self.user_id, "md")
+        self.assertEqual(cached_export["content"], export_info["content"])
 
     def test_pdf_export_case(self):
         export_info = build_score_export(self.score_id, self.user_id, "pdf")
 
         self.assertEqual(export_info["mimetype"], "application/pdf")
         self.assertTrue(export_info["filename"].endswith(".pdf"))
-
-        export_path = Path(export_info["file_path"])
-        self.assertTrue(export_path.exists())
-
-        pdf_bytes = export_path.read_bytes()
+        pdf_bytes = export_info["content"]
         self.assertTrue(pdf_bytes.startswith(b"%PDF"))
         self.assertGreater(len(pdf_bytes), 1024)
+
+        cached_export = build_score_export(self.score_id, self.user_id, "pdf")
+        self.assertEqual(cached_export["content"], export_info["content"])
 
     def _find_report_type(self, definition_id):
         for report_type, definition in REPORT_DEFINITIONS.items():

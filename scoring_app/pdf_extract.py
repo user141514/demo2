@@ -1,6 +1,8 @@
 import re
 import zlib
 
+from .core.text_quality import looks_like_garbled_text, looks_like_garbled_fragment
+
 
 class PdfExtractionError(Exception):
     pass
@@ -13,7 +15,7 @@ HEX_RE = re.compile(rb"<([0-9A-Fa-f\s]+)>")
 
 def extract_text_from_pdf_bytes(data):
     if not data.startswith(b"%PDF"):
-        raise PdfExtractionError("上传文件不是有效的 PDF。")
+        raise PdfExtractionError("上传的文件不是有效的 PDF。")
 
     candidates = []
     for stream in _iter_streams(data):
@@ -26,7 +28,7 @@ def extract_text_from_pdf_bytes(data):
     seen = set()
     for candidate in candidates:
         line = _normalize_text(candidate)
-        if len(line) < 2 or line in seen:
+        if len(line) < 3 or looks_like_garbled_fragment(line) or line in seen:
             continue
         seen.add(line)
         cleaned.append(line)
@@ -36,6 +38,10 @@ def extract_text_from_pdf_bytes(data):
     if len(merged) < 40:
         raise PdfExtractionError(
             "未能从 PDF 提取足够文本，请优先上传文字版 PDF；扫描版或图片版 PDF 可能无法解析。"
+        )
+    if looks_like_garbled_text(merged, min_suspicious=6, min_ratio=0.12):
+        raise PdfExtractionError(
+            "PDF 文本提取结果疑似乱码，请优先上传文字版 PDF，或先转换为可复制文本后再上传。"
         )
     return merged
 

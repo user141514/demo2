@@ -1,8 +1,8 @@
-import hashlib
 import re
 from uuid import uuid4
 
-from .live_scoring import LiveScoringError, live_score_submission
+from .core.text_quality import looks_like_garbled_text
+from .live_scoring import live_score_submission
 from .rules import DISCLAIMER, get_report_definition, score_to_level, total_to_level
 from .utils import now_iso
 
@@ -12,6 +12,29 @@ class ScoringError(Exception):
 
 
 def score_submission(report_type, document_text, transcript_text, metadata):
+    # === GRAPH KILL SWITCH ===
+    import os
+    if os.getenv("SCORING_USE_GRAPH", "").lower() in ("1", "true", "yes"):
+        from .graph.pipeline import execute_scoring_pipeline
+
+        initial_state = {
+            "report_type": report_type,
+            "document_text": document_text,
+            "transcript_text": transcript_text,
+            "metadata": metadata,
+            "name": metadata.get("name", ""),
+            "org": metadata.get("org", ""),
+            "score_date": metadata.get("date", ""),
+            "note": metadata.get("note", ""),
+            "pdf_bytes": b"",
+        }
+        result = execute_scoring_pipeline(initial_state)
+        result.setdefault("scoring_mode", "")
+        result.setdefault("llm_provider", "")
+        result.setdefault("llm_model", "")
+        return result
+    # === END KILL SWITCH ===
+
     if not document_text or len(document_text.strip()) < 40:
         raise ScoringError("未能获取足够的文档文本，无法生成评分结果。")
 
@@ -142,7 +165,7 @@ def _build_heuristic_dimensions(definition, document_text, transcript_text, tran
                 "material_source": dimension["material_source"],
                 "score": None,
                 "level_label": None,
-                "evidence": "录音材料未提供",
+                "evidence": "录音材料未提供。",
                 "comment": "",
             }
         else:
@@ -179,13 +202,10 @@ def _score_dimension(text, dimension):
         score -= 0.8
     if len(normalized) < 60:
         score -= 0.4
+    if looks_like_garbled_text(normalized):
+        score = min(score, 4.2)
 
-    digest = hashlib.md5((dimension["name"] + normalized[:120]).encode("utf-8")).hexdigest()
-    decimal = (int(digest[:2], 16) % 9 + 1) / 10.0
     score = max(3.8, min(9.0, score))
-    score = round(score, 1)
-    if abs(score - int(score)) < 1e-9:
-        score = min(9.0, score + decimal)
     return round(score, 1)
 
 
@@ -193,16 +213,21 @@ def _build_evidence(text, keywords):
     sentences = _split_sentences(text)
     for keyword in keywords:
         for sentence in sentences:
-            if keyword in sentence:
+            if keyword in sentence and not looks_like_garbled_text(sentence):
                 return _limit(sentence, 80)
-    return _limit(sentences[0] if sentences else text, 80)
+
+    for sentence in sentences:
+        if not looks_like_garbled_text(sentence):
+            return _limit(sentence, 80)
+
+    return "文档文本提取质量不足，未找到可直接引用的有效证据。"
 
 
 def _build_comment(score, focus, transcript_present):
     label = score_to_level(score)
     tone = {
         "卓越": "该维度表现突出，关键论述完整且有较强支撑。",
-        "优秀": "该维度表现扎实，能较好支撑整体汇报质量。",
+        "优秀": "该维度表现扎实，能够较好支撑整体汇报质量。",
         "良好": "该维度具备基础支撑，但细节和说服力仍可继续加强。",
         "合格": "该维度已有基本表达，但论据与完整性偏弱。",
         "不合格": "该维度材料支撑不足，难以形成有效判断。",
