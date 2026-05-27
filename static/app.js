@@ -814,7 +814,6 @@ function renderHistory(list) {
         <tr>
           <td>
             <div class="strong">${escapeHtml(item.name || "--")}</div>
-            <div class="muted">${escapeHtml(item.id || "")}</div>
           </td>
           <td>${escapeHtml(item.org || "--")}</td>
           <td><span class="tag">${escapeHtml(item.reportType || "--")}</span></td>
