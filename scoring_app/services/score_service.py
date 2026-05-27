@@ -1,13 +1,24 @@
 from dataclasses import dataclass
 
 from ..core.errors import ApplicationError
+from ..core.text_quality import looks_like_garbled_text
 from ..markdown_export import build_markdown
 from ..pdf_export import PdfBuildError, build_pdf_bytes
 from ..pdf_extract import PdfExtractionError, extract_text_from_pdf_bytes
-from ..repository import get_score_detail, list_scores, store_score
+from ..repository import (
+    delete_score,
+    get_score_artifact,
+    get_score_detail,
+    list_scores,
+    list_scores_paginated,
+    store_score_artifact,
+    store_score_bundle,
+    update_score_meta,
+)
+from ..database import get_connection
 from ..rules import REPORT_DEFINITIONS
 from ..scoring import ScoringError, score_submission
-from ..utils import save_upload
+from ..utils import now_iso
 
 
 COURSE_SESSION_OPTIONS = {
@@ -31,6 +42,7 @@ class ScoreSubmissionInput:
     note: str
     transcript: str
     transcript_filename: str
+    transcript_file_bytes: bytes
     pdf_file: object
     pdf_bytes: bytes
 
@@ -44,7 +56,6 @@ def create_score(form, files, user_id):
         raise ApplicationError("pdf_extract_failed", str(exc), 422)
 
     try:
-        upload_path = save_upload(submission.pdf_file.filename, submission.pdf_bytes)
         result = score_submission(
             report_type=submission.report_type,
             document_text=document_text,
@@ -56,7 +67,7 @@ def create_score(form, files, user_id):
                 "date": submission.score_date,
                 "note": submission.note,
                 "pdf_filename": submission.pdf_file.filename,
-                "upload_path": str(upload_path),
+                "upload_path": "",
                 "document_preview": document_text[:800],
             },
         )
@@ -65,18 +76,65 @@ def create_score(form, files, user_id):
 
     result["user_id"] = user_id
     result["course_session"] = submission.course_session
+    result["upload_path"] = "db://score_artifacts/{}/source_pdf".format(result["score_id"])
     result["markdown_export_url"] = "/api/scores/{}/export?format=md".format(
         result["score_id"]
     )
     result["pdf_export_url"] = "/api/scores/{}/export?format=pdf".format(
         result["score_id"]
     )
-    store_score(result)
+    artifacts = [
+        {
+            "artifact_kind": "source_pdf",
+            "filename": submission.pdf_file.filename,
+            "mimetype": "application/pdf",
+            "content_bytes": submission.pdf_bytes,
+            "created_at": result["created_at"],
+        }
+    ]
+    if submission.transcript_file_bytes:
+        artifacts.append(
+            {
+                "artifact_kind": "source_transcript",
+                "filename": submission.transcript_filename or "transcript.txt",
+                "mimetype": "text/plain",
+                "content_bytes": submission.transcript_file_bytes,
+                "created_at": result["created_at"],
+            }
+        )
+    store_score_bundle(result, artifacts=artifacts)
     return result
 
 
 def list_user_scores(user_id):
     return list_scores(user_id)
+
+
+def list_user_scores_paginated(user_id, page=1, per_page=20):
+    return list_scores_paginated(user_id, page=page, per_page=per_page)
+
+
+def delete_user_score(score_id, user_id):
+    connection = get_connection()
+    try:
+        deleted = delete_score(connection, score_id, user_id)
+        connection.commit()
+        if not deleted:
+            raise ApplicationError("score_not_found", "Score record was not found.", 404)
+    finally:
+        connection.close()
+
+
+def update_user_score(score_id, user_id, updates):
+    connection = get_connection()
+    try:
+        row = update_score_meta(connection, score_id, user_id, updates)
+        connection.commit()
+        if row is None:
+            raise ApplicationError("score_not_found", "Score record was not found.", 404)
+        return get_score_detail(score_id, user_id)
+    finally:
+        connection.close()
 
 
 def get_user_score(score_id, user_id):
@@ -96,13 +154,29 @@ def build_score_export(score_id, user_id, export_format):
 
     detail = get_user_score(score_id, user_id)
     base_name = "{}_{}_{}".format(detail["name"], detail["report_type"], detail["date"])
+    artifact_kind = "export_{}".format(export_format)
+    cached_artifact = get_score_artifact(score_id, artifact_kind)
+    if cached_artifact is not None:
+        return {
+            "content": cached_artifact["content_bytes"],
+            "filename": cached_artifact["filename"],
+            "mimetype": cached_artifact["mimetype"],
+        }
 
     if export_format == "md":
         markdown = build_markdown(detail)
         filename = "{}.md".format(base_name)
-        file_path = save_upload(filename, markdown.encode("utf-8"), folder_name="exports")
+        content_bytes = markdown.encode("utf-8")
+        store_score_artifact(
+            score_id,
+            artifact_kind,
+            filename,
+            "text/markdown; charset=utf-8",
+            content_bytes,
+            now_iso(),
+        )
         return {
-            "file_path": file_path,
+            "content": content_bytes,
             "filename": filename,
             "mimetype": "text/markdown; charset=utf-8",
         }
@@ -113,9 +187,16 @@ def build_score_export(score_id, user_id, export_format):
         raise ApplicationError("pdf_export_failed", str(exc), 500)
 
     filename = "{}.pdf".format(base_name)
-    file_path = save_upload(filename, pdf_bytes, folder_name="exports")
+    store_score_artifact(
+        score_id,
+        artifact_kind,
+        filename,
+        "application/pdf",
+        pdf_bytes,
+        now_iso(),
+    )
     return {
-        "file_path": file_path,
+        "content": pdf_bytes,
         "filename": filename,
         "mimetype": "application/pdf",
     }
@@ -161,7 +242,16 @@ def _parse_submission(form, files):
     if len(pdf_bytes) > 20 * 1024 * 1024:
         raise ApplicationError("pdf_too_large", "The uploaded PDF must be smaller than 20MB.", 400)
 
-    transcript, transcript_filename = _resolve_transcript_input(transcript, transcript_file)
+    transcript_file_bytes = b""
+    transcript_filename = ""
+    if transcript_file is not None and getattr(transcript_file, "filename", ""):
+        transcript_filename = transcript_file.filename
+        transcript_file_bytes = transcript_file.read()
+    transcript, transcript_filename = _resolve_transcript_input(
+        transcript,
+        transcript_filename,
+        transcript_file_bytes,
+    )
 
     return ScoreSubmissionInput(
         name=name,
@@ -172,30 +262,40 @@ def _parse_submission(form, files):
         note=note,
         transcript=transcript,
         transcript_filename=transcript_filename,
+        transcript_file_bytes=transcript_file_bytes,
         pdf_file=pdf_file,
         pdf_bytes=pdf_bytes,
     )
 
 
-def _resolve_transcript_input(transcript_text, transcript_file):
+def _resolve_transcript_input(transcript_text, transcript_filename, transcript_file_bytes):
     normalized = transcript_text.strip()
+    decoded_from_file = ""
+    if transcript_file_bytes:
+        decoded_from_file = _decode_transcript_bytes(transcript_file_bytes)
+
+    if normalized and not looks_like_garbled_text(normalized):
+        return normalized, transcript_filename if transcript_file_bytes else ""
+    if decoded_from_file:
+        return decoded_from_file, transcript_filename
     if normalized:
         return normalized, ""
-
-    if transcript_file is None or not getattr(transcript_file, "filename", ""):
+    if not transcript_file_bytes:
         return "", ""
 
-    payload = transcript_file.read()
-    if not payload:
-        return "", transcript_file.filename
+    return "", transcript_filename
 
+
+def _decode_transcript_bytes(payload):
+    if not payload:
+        return ""
     for encoding in ("utf-8", "utf-8-sig", "gb18030", "latin-1"):
         try:
             decoded = payload.decode(encoding).strip()
         except Exception:
             continue
         if decoded:
-            return decoded, transcript_file.filename
+            return decoded
 
     raise ApplicationError(
         "invalid_transcript_file",

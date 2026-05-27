@@ -73,6 +73,20 @@ class AuthFlowTestCase(unittest.TestCase):
         self.assertEqual(login_response.status_code, 200)
         self.assertEqual(login_response.get_json()["user"]["display_name"], "Alice")
 
+    def test_https_proxy_sets_secure_session_cookie(self):
+        response = self.client.post(
+            "/api/auth/register",
+            json={
+                "email": "secure@example.com",
+                "display_name": "Secure User",
+                "password": "Passw0rd!",
+            },
+            base_url="http://public.example.com",
+            headers={"X-Forwarded-Proto": "https"},
+        )
+        self.assertEqual(response.status_code, 201)
+        self.assertIn("Secure", response.headers.get("Set-Cookie", ""))
+
     def test_protected_endpoints_require_auth(self):
         self.assertEqual(self.client.post("/api/score").status_code, 401)
         self.assertEqual(self.client.get("/api/scores").status_code, 401)

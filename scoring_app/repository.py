@@ -1,4 +1,5 @@
 import json
+from uuid import uuid4
 
 from .database import get_connection
 
@@ -85,6 +86,26 @@ def init_db():
                 PRIMARY KEY (score_id, dimension_id),
                 FOREIGN KEY (score_id) REFERENCES scores(score_id)
             );
+
+            CREATE TABLE IF NOT EXISTS score_artifacts (
+                artifact_id TEXT PRIMARY KEY,
+                score_id TEXT NOT NULL,
+                artifact_kind TEXT NOT NULL,
+                filename TEXT NOT NULL,
+                mimetype TEXT NOT NULL,
+                content_bytes BLOB NOT NULL,
+                byte_size INTEGER NOT NULL,
+                created_at TEXT NOT NULL,
+                FOREIGN KEY (score_id) REFERENCES scores(score_id) ON DELETE CASCADE
+            );
+
+            CREATE TABLE IF NOT EXISTS report_definition_versions (
+                version_id TEXT PRIMARY KEY,
+                report_type TEXT NOT NULL,
+                definition_json TEXT NOT NULL,
+                version_label TEXT NOT NULL,
+                created_at TEXT NOT NULL
+            );
             """
         )
         _ensure_column(
@@ -104,6 +125,59 @@ def init_db():
             CREATE INDEX IF NOT EXISTS idx_scores_user_id
             ON scores(user_id)
             """
+        )
+        connection.execute(
+            """
+            CREATE UNIQUE INDEX IF NOT EXISTS idx_score_artifacts_score_kind
+            ON score_artifacts(score_id, artifact_kind)
+            """
+        )
+        _ensure_column(
+            connection,
+            "scores",
+            "scoring_mode",
+            "ALTER TABLE scores ADD COLUMN scoring_mode TEXT",
+        )
+        _ensure_column(
+            connection,
+            "scores",
+            "data_completeness",
+            "ALTER TABLE scores ADD COLUMN data_completeness REAL",
+        )
+        connection.execute(
+            """
+            CREATE TABLE IF NOT EXISTS calibration_metrics (
+                dimension_id INTEGER NOT NULL,
+                report_type TEXT NOT NULL,
+                count INTEGER NOT NULL DEFAULT 0,
+                mean REAL NOT NULL DEFAULT 0.0,
+                m2 REAL NOT NULL DEFAULT 0.0,
+                min_value REAL,
+                max_value REAL,
+                updated_at TEXT NOT NULL,
+                PRIMARY KEY (dimension_id, report_type)
+            );
+            """
+        )
+        connection.execute(
+            """
+            CREATE TABLE IF NOT EXISTS paused_evaluations (
+                pause_id TEXT PRIMARY KEY,
+                score_id TEXT NOT NULL,
+                paused_by TEXT,
+                reason TEXT NOT NULL,
+                resume_token TEXT NOT NULL,
+                paused_at TEXT NOT NULL,
+                resumed_at TEXT,
+                resolved_by TEXT
+            );
+            """
+        )
+        _ensure_column(
+            connection,
+            "scores",
+            "review_required",
+            "ALTER TABLE scores ADD COLUMN review_required INTEGER NOT NULL DEFAULT 0",
         )
         connection.commit()
     finally:
@@ -348,6 +422,10 @@ def consume_password_reset_token(token_id, used_at):
 
 
 def store_score(result):
+    store_score_bundle(result)
+
+
+def store_score_bundle(result, artifacts=None):
     connection = get_connection()
     try:
         connection.execute(
@@ -387,30 +465,52 @@ def store_score(result):
                 result["created_at"],
             ),
         )
+        _insert_score(connection, result)
         for dimension in result["dimensions"]:
-            connection.execute(
-                """
-                INSERT INTO score_dimensions (
-                    score_id, dimension_id, name, group_name, group_weight,
-                    actual_weight, material_source, score, level_label, evidence, comment
-                )
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                """,
-                (
-                    result["score_id"],
-                    dimension["id"],
-                    dimension["name"],
-                    dimension["group_name"],
-                    dimension["group_weight"],
-                    dimension["actual_weight"],
-                    dimension["material_source"],
-                    dimension["score"],
-                    dimension["level_label"],
-                    dimension["evidence"],
-                    dimension["comment"],
-                ),
-            )
+            _insert_score_dimension(connection, result["score_id"], dimension)
+        for artifact in artifacts or []:
+            _upsert_score_artifact(connection, result["score_id"], artifact)
         connection.commit()
+    finally:
+        connection.close()
+
+
+def store_score_artifact(score_id, artifact_kind, filename, mimetype, content_bytes, created_at):
+    if content_bytes is None:
+        return None
+
+    connection = get_connection()
+    try:
+        artifact = _upsert_score_artifact(
+            connection,
+            score_id,
+            {
+                "artifact_kind": artifact_kind,
+                "filename": filename,
+                "mimetype": mimetype,
+                "content_bytes": content_bytes,
+                "created_at": created_at,
+            },
+        )
+        connection.commit()
+        return artifact
+    finally:
+        connection.close()
+
+
+def get_score_artifact(score_id, artifact_kind):
+    connection = get_connection()
+    try:
+        row = connection.execute(
+            """
+            SELECT artifact_id, score_id, artifact_kind, filename, mimetype,
+                   content_bytes, byte_size, created_at
+            FROM score_artifacts
+            WHERE score_id = ? AND artifact_kind = ?
+            """,
+            (score_id, artifact_kind),
+        ).fetchone()
+        return dict(row) if row is not None else None
     finally:
         connection.close()
 
@@ -450,6 +550,55 @@ def list_scores(user_id):
                 "compared_count": 0,
                 "status": "pending",
             },
+        }
+    finally:
+        connection.close()
+
+
+def list_scores_paginated(user_id, page=1, per_page=20):
+    connection = get_connection()
+    try:
+        count_row = connection.execute(
+            "SELECT COUNT(*) AS total FROM scores WHERE user_id = ?",
+            (user_id,),
+        ).fetchone()
+        total = count_row["total"] if count_row is not None else 0
+
+        offset = (page - 1) * per_page
+        total_pages = (total + per_page - 1) // per_page if total > 0 else 0
+
+        rows = connection.execute(
+            """
+            SELECT score_id, name, org, report_type, score_date, total_score,
+                   total_level, created_at
+            FROM scores
+            WHERE user_id = ?
+            ORDER BY created_at DESC
+            LIMIT ? OFFSET ?
+            """,
+            (user_id, per_page, offset),
+        ).fetchall()
+
+        return {
+            "items": [
+                {
+                    "score_id": row["score_id"],
+                    "name": row["name"],
+                    "org": row["org"],
+                    "report_type": row["report_type"],
+                    "date": row["score_date"],
+                    "total_score": row["total_score"],
+                    "total_level": row["total_level"],
+                    "manual_score": None,
+                    "manual_score_status": "pending",
+                    "created_at": row["created_at"],
+                }
+                for row in rows
+            ],
+            "total": total,
+            "page": page,
+            "per_page": per_page,
+            "total_pages": total_pages,
         }
     finally:
         connection.close()
@@ -536,3 +685,228 @@ def _serialize_user(row):
         "created_at": row["created_at"],
         "updated_at": row["updated_at"],
     }
+
+
+def _insert_score(connection, result):
+    connection.execute(
+        """
+        INSERT INTO scores (
+            score_id, user_id, name, org, report_type, score_date, note, pdf_filename,
+            upload_path, document_preview, transcript_present, total_score,
+            total_level, doc_average, audio_average, lowest_dimension_name,
+            lowest_dimension_score, overall_comment, strengths_json,
+            improvements_json, disclaimer, created_at,
+            scoring_mode, data_completeness
+        )
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """,
+        (
+            result["score_id"],
+            result["user_id"],
+            result["name"],
+            result["org"],
+            result["report_type"],
+            result["date"],
+            result["note"],
+            result["pdf_filename"],
+            result["upload_path"],
+            result["document_preview"],
+            1 if result["transcript_present"] else 0,
+            result["total_score"],
+            result["total_level"],
+            result["doc_average"],
+            result["audio_average"],
+            result["lowest_dimension"]["name"],
+            result["lowest_dimension"]["score"],
+            result["overall_comment"],
+            json.dumps(result["strengths"], ensure_ascii=False),
+            json.dumps(result["improvements"], ensure_ascii=False),
+            result["disclaimer"],
+            result["created_at"],
+            result.get("scoring_mode"),
+            result.get("data_completeness"),
+        ),
+    )
+
+
+def _insert_score_dimension(connection, score_id, dimension):
+    connection.execute(
+        """
+        INSERT INTO score_dimensions (
+            score_id, dimension_id, name, group_name, group_weight,
+            actual_weight, material_source, score, level_label, evidence, comment
+        )
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """,
+        (
+            score_id,
+            dimension["id"],
+            dimension["name"],
+            dimension["group_name"],
+            dimension["group_weight"],
+            dimension["actual_weight"],
+            dimension["material_source"],
+            dimension["score"],
+            dimension["level_label"],
+            dimension["evidence"],
+            dimension["comment"],
+        ),
+    )
+
+
+def _upsert_score_artifact(connection, score_id, artifact):
+    artifact_id = uuid4().hex
+    payload = bytes(artifact["content_bytes"])
+    connection.execute(
+        """
+        DELETE FROM score_artifacts
+        WHERE score_id = ? AND artifact_kind = ?
+        """,
+        (score_id, artifact["artifact_kind"]),
+    )
+    connection.execute(
+        """
+        INSERT INTO score_artifacts (
+            artifact_id, score_id, artifact_kind, filename, mimetype,
+            content_bytes, byte_size, created_at
+        )
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        """,
+        (
+            artifact_id,
+            score_id,
+            artifact["artifact_kind"],
+            artifact["filename"],
+            artifact["mimetype"],
+            payload,
+            len(payload),
+            artifact["created_at"],
+        ),
+    )
+    return {
+        "artifact_id": artifact_id,
+        "score_id": score_id,
+        "artifact_kind": artifact["artifact_kind"],
+        "filename": artifact["filename"],
+        "mimetype": artifact["mimetype"],
+        "byte_size": len(payload),
+        "created_at": artifact["created_at"],
+    }
+
+
+def delete_score(connection, score_id, user_id):
+    cursor = connection.execute(
+        "DELETE FROM scores WHERE score_id = ? AND user_id = ?",
+        (score_id, user_id),
+    )
+    return cursor.rowcount > 0
+
+
+def update_score_meta(connection, score_id, user_id, updates):
+    allowed_keys = {"name", "org", "note"}
+    set_parts = []
+    params = []
+    for key, value in updates.items():
+        if key in allowed_keys:
+            set_parts.append("{} = ?".format(key))
+            params.append(value)
+    if not set_parts:
+        return None
+
+    params.append(score_id)
+    params.append(user_id)
+    connection.execute(
+        "UPDATE scores SET {} WHERE score_id = ? AND user_id = ?".format(
+            ", ".join(set_parts)
+        ),
+        params,
+    )
+
+    row = connection.execute(
+        "SELECT * FROM scores WHERE score_id = ? AND user_id = ?",
+        (score_id, user_id),
+    ).fetchone()
+    if row is None:
+        return None
+    return dict(row)
+
+
+def store_report_definition_version(version_id, report_type, definition_json, version_label, created_at):
+    connection = get_connection()
+    try:
+        connection.execute(
+            """
+            INSERT INTO report_definition_versions
+                (version_id, report_type, definition_json, version_label, created_at)
+            VALUES (?, ?, ?, ?, ?)
+            """,
+            (version_id, report_type, definition_json, version_label, created_at),
+        )
+        connection.commit()
+    finally:
+        connection.close()
+
+
+def list_report_definition_versions(report_type=None):
+    connection = get_connection()
+    try:
+        if report_type:
+            rows = connection.execute(
+                """
+                SELECT version_id, report_type, definition_json, version_label, created_at
+                FROM report_definition_versions
+                WHERE report_type = ?
+                ORDER BY created_at DESC
+                """,
+                (report_type,),
+            ).fetchall()
+        else:
+            rows = connection.execute(
+                """
+                SELECT version_id, report_type, definition_json, version_label, created_at
+                FROM report_definition_versions
+                ORDER BY created_at DESC
+                """
+            ).fetchall()
+        return [dict(row) for row in rows]
+    finally:
+        connection.close()
+
+
+def create_pause_record(pause_id, score_id, paused_by, reason, resume_token, paused_at):
+    conn = get_connection()
+    try:
+        conn.execute(
+            "INSERT INTO paused_evaluations (pause_id, score_id, paused_by, reason, resume_token, paused_at) "
+            "VALUES (?, ?, ?, ?, ?, ?)",
+            (pause_id, score_id, paused_by, reason, resume_token, paused_at),
+        )
+        conn.commit()
+        return {"pause_id": pause_id, "score_id": score_id, "resume_token": resume_token}
+    finally:
+        conn.close()
+
+
+def resolve_pause_record(score_id, resume_token, resolved_at, resolved_by=""):
+    conn = get_connection()
+    try:
+        cursor = conn.execute(
+            "UPDATE paused_evaluations SET resumed_at = ?, resolved_by = ? "
+            "WHERE score_id = ? AND resume_token = ? AND resumed_at IS NULL",
+            (resolved_at, resolved_by, score_id, resume_token),
+        )
+        conn.commit()
+        return cursor.rowcount > 0
+    finally:
+        conn.close()
+
+
+def get_active_pause(score_id):
+    conn = get_connection()
+    try:
+        return conn.execute(
+            "SELECT * FROM paused_evaluations WHERE score_id = ? AND resumed_at IS NULL",
+            (score_id,),
+        ).fetchone()
+    finally:
+        conn.close()

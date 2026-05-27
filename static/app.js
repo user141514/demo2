@@ -581,6 +581,7 @@ async function submitScore() {
     const score = normalizeScore(payload, formState);
     state.currentScore = score;
     state.currentHistoryItem = null;
+    upsertLocalHistoryFromScore(score);
     renderResult(score, { fromHistory: false });
     showPage("result");
     await loadHistory({ force: true, silent: true });
@@ -689,12 +690,30 @@ function onTranscriptFileSelected(event) {
     return;
   }
 
-  els.transcriptMeta.textContent = `${file.name} · ${(file.size / 1024).toFixed(1)} KB`;
+  const baseMeta = `${file.name} · ${formatFileSize(file.size)}`;
+  const hasManualText = Boolean(els.fieldTranscript.value.trim());
+  els.transcriptMeta.textContent = `${baseMeta} · 文件会随评分请求一并上传`;
   const reader = new FileReader();
   reader.onload = () => {
-    els.fieldTranscript.value = String(reader.result || "");
+    const preview = decodeTranscriptPreview(reader.result);
+    if (hasManualText) {
+      els.transcriptMeta.textContent = `${baseMeta} · 已保留当前文本框内容`;
+      return;
+    }
+    if (!preview.text) {
+      els.fieldTranscript.value = "";
+      els.transcriptMeta.textContent = `${baseMeta} · 已附带原始文件，未自动填充预览`;
+      return;
+    }
+    els.fieldTranscript.value = preview.text;
+    els.transcriptMeta.textContent = preview.warning
+      ? `${baseMeta} · ${preview.warning}`
+      : `${baseMeta} · 已自动预览，可继续修改`;
   };
-  reader.readAsText(file, "utf-8");
+  reader.onerror = () => {
+    els.transcriptMeta.textContent = `${baseMeta} · 读取预览失败，但原始文件仍会上传`;
+  };
+  reader.readAsArrayBuffer(file);
 }
 
 function showLoading(text, progress) {
@@ -756,7 +775,7 @@ async function loadHistory(options = {}) {
 
   try {
     const payload = await requestJson(API.scores, { method: "GET" });
-    state.history = normalizeHistoryList(payload);
+    state.history = mergeServerHistoryWithCurrentScore(normalizeHistoryList(payload));
     renderHistory(state.history);
     updateHistorySummary(state.history);
     if (!silent) {
@@ -768,13 +787,12 @@ async function loadHistory(options = {}) {
       handleAuthFailure();
       return [];
     }
-    state.history = [];
-    renderHistory([]);
-    updateHistorySummary([]);
+    renderHistory(state.history);
+    updateHistorySummary(state.history);
     if (!silent) {
       showAppNotice(error.message || "加载历史失败，请稍后重试。", "error");
     }
-    return [];
+    return state.history;
   }
 }
 
@@ -1294,6 +1312,39 @@ function normalizeHistoryItem(item, index) {
   };
 }
 
+function historyItemFromScore(score) {
+  return {
+    id: score?.id ?? null,
+    name: score?.name ?? "--",
+    org: score?.org ?? "--",
+    reportType: score?.reportType ?? score?.type ?? "--",
+    totalScore: numberOrNull(score?.totalScore),
+    manualAvg: null,
+    date: score?.date ?? "--",
+    createdAt: score?.createdAt ?? score?.date ?? "",
+  };
+}
+
+function upsertLocalHistoryFromScore(score) {
+  const item = historyItemFromScore(score);
+  if (!item.id) {
+    return;
+  }
+  const existing = state.history.filter((entry) => String(entry.id) !== String(item.id));
+  state.history = [item, ...existing];
+}
+
+function mergeServerHistoryWithCurrentScore(serverItems) {
+  const merged = Array.isArray(serverItems) ? [...serverItems] : [];
+  if (!state.currentScore || !state.currentScore.id) {
+    return merged;
+  }
+  if (merged.some((item) => String(item.id) === String(state.currentScore.id))) {
+    return merged;
+  }
+  return [historyItemFromScore(state.currentScore), ...merged];
+}
+
 async function requestJson(url, options = {}) {
   const headers = new Headers(options.headers || {});
   if (!headers.has("Accept")) {
@@ -1376,6 +1427,81 @@ function formatWeight(value) {
     return `${value}%`;
   }
   return String(value).includes("%") ? String(value) : `${value}%`;
+}
+
+function formatFileSize(size) {
+  if (!Number.isFinite(size) || size <= 0) {
+    return "0 KB";
+  }
+  if (size >= 1024 * 1024) {
+    return `${(size / 1024 / 1024).toFixed(2)} MB`;
+  }
+  return `${(size / 1024).toFixed(1)} KB`;
+}
+
+function decodeTranscriptPreview(buffer) {
+  const bytes = buffer instanceof ArrayBuffer ? new Uint8Array(buffer) : new Uint8Array(0);
+  if (!bytes.length || typeof TextDecoder === "undefined") {
+    return { text: "", warning: "" };
+  }
+
+  const candidates = ["utf-8", "utf-8-sig", "gb18030", "utf-16le", "utf-16be"]
+    .map((encoding) => decodeTranscriptCandidate(bytes, encoding))
+    .filter(Boolean)
+    .sort((left, right) => right.score - left.score);
+
+  if (!candidates.length) {
+    return { text: "", warning: "" };
+  }
+
+  const best = candidates[0];
+  if (best.garbled) {
+    return { text: "", warning: "检测到文本编码不稳定，已改为仅上传原始文件" };
+  }
+  return {
+    text: best.text,
+    warning: best.fromFallback ? "预览已按兼容编码解码，提交时仍会上传原始文件" : "",
+  };
+}
+
+function decodeTranscriptCandidate(bytes, encoding) {
+  try {
+    const decoder = new TextDecoder(encoding === "utf-8-sig" ? "utf-8" : encoding, {
+      fatal: false,
+    });
+    let text = decoder.decode(bytes);
+    if (encoding === "utf-8-sig" && text.charCodeAt(0) === 0xfeff) {
+      text = text.slice(1);
+    }
+    const normalized = String(text || "")
+      .replace(/\u0000/g, " ")
+      .replace(/\s+/g, " ")
+      .trim();
+    if (!normalized) {
+      return null;
+    }
+    const garbled = looksLikeClientGarbledText(normalized);
+    const compact = normalized.replace(/\s+/g, "");
+    const meaningful = (compact.match(/[A-Za-z0-9\u4e00-\u9fff]/g) || []).length;
+    const suspicious = (compact.match(/[�閿熼垾閵嗛張鐠囬崣閻ㄨぐ闂傞柅娴犵紒]/g) || []).length;
+    return {
+      text: normalized,
+      score: meaningful - suspicious * 4 - (garbled ? 1000 : 0),
+      garbled,
+      fromFallback: !["utf-8", "utf-8-sig"].includes(encoding),
+    };
+  } catch {
+    return null;
+  }
+}
+
+function looksLikeClientGarbledText(value) {
+  const compact = String(value || "").replace(/\s+/g, "");
+  if (!compact) {
+    return false;
+  }
+  const suspicious = (compact.match(/[�閿熼垾閵嗛張鐠囬崣閻ㄨぐ闂傞柅娴犵紒]/g) || []).length;
+  return suspicious >= 2 && suspicious / compact.length >= 0.15;
 }
 
 function getExportUrl(format, id) {
