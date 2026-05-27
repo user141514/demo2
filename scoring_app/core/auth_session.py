@@ -48,25 +48,27 @@ def logout_current_session():
 
 
 def set_session_cookie(response, token):
+    secure = _should_use_secure_cookie()
     response.set_cookie(
         current_app.config["AUTH_COOKIE_NAME"],
         token,
         max_age=current_app.config["AUTH_SESSION_DAYS"] * 24 * 60 * 60,
         httponly=True,
         samesite="Lax",
-        secure=current_app.config["AUTH_COOKIE_SECURE"],
+        secure=secure,
         path="/",
     )
     return response
 
 
 def clear_session_cookie(response):
+    secure = _should_use_secure_cookie()
     try:
         response.delete_cookie(
             current_app.config["AUTH_COOKIE_NAME"],
             path="/",
             samesite="Lax",
-            secure=current_app.config["AUTH_COOKIE_SECURE"],
+            secure=secure,
         )
     except TypeError:
         response.delete_cookie(
@@ -74,3 +76,15 @@ def clear_session_cookie(response):
             path="/",
         )
     return response
+
+
+def _should_use_secure_cookie():
+    if current_app.config["AUTH_COOKIE_SECURE"]:
+        return True
+    if request.is_secure:
+        return True
+    app_base_url = (current_app.config.get("APP_BASE_URL") or "").strip().lower()
+    if app_base_url.startswith("https://"):
+        return True
+    forwarded_proto = (request.headers.get("X-Forwarded-Proto") or "").split(",")[0].strip().lower()
+    return forwarded_proto == "https"
