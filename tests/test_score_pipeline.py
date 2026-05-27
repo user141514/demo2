@@ -66,8 +66,6 @@ class ScorePipelineTestCase(unittest.TestCase):
         self.assertEqual(create_response.status_code, 200)
         score_payload = create_response.get_json()
         score_id = score_payload["score_id"]
-        self.assertEqual(score_payload["name"], "测试学员")
-        self.assertEqual(score_payload["org"], "交付一部")
         self.assertEqual(score_payload["course_session"], "第二次课 · 组织协同")
         self.assertEqual(score_payload["name"], "Pipeline Student")
         self.assertEqual(score_payload["org"], "Delivery Team")
@@ -99,23 +97,17 @@ class ScorePipelineTestCase(unittest.TestCase):
 
         markdown_response = self.client.get("/api/scores/{}/export?format=md".format(score_id))
         try:
-            self.assertEqual(export_response.status_code, 200)
-            self.assertIn("text/markdown", export_response.headers["Content-Type"])
-            self.assertIn(".md", export_response.headers["Content-Disposition"])
-            export_text = export_response.get_data(as_text=True)
-            self.assertIn("测试学员", export_text)
-            self.assertIn(self.report_type, export_text)
-            self.assertIn("第二次课 · 组织协同", export_text)
-            self.assertIn("综合表现稳健", export_text)
-            self.assertLess(export_text.index("## 一级维度明细"), export_text.index("## 结论与建议"))
-            self.assertLess(export_text.index("### 总评"), export_text.index("### 优势与亮点"))
-            self.assertLess(export_text.index("### 优势与亮点"), export_text.index("### 改进方向"))
             self.assertEqual(markdown_response.status_code, 200)
             self.assertIn("text/markdown", markdown_response.headers["Content-Type"])
             self.assertIn(".md", markdown_response.headers["Content-Disposition"])
             export_text = markdown_response.get_data(as_text=True)
+            self.assertIn(self.report_type, export_text)
+            self.assertIn("第二次课 · 组织协同", export_text)
             self.assertIn("Pipeline Student", export_text)
             self.assertIn("Overall performance is steady", export_text)
+            self.assertLess(export_text.index("## 一级维度明细"), export_text.index("## 结论与建议"))
+            self.assertLess(export_text.index("### 总评"), export_text.index("### 优势与亮点"))
+            self.assertLess(export_text.index("### 优势与亮点"), export_text.index("### 改进方向"))
         finally:
             markdown_response.close()
 
@@ -156,6 +148,7 @@ class ScorePipelineTestCase(unittest.TestCase):
                     "name": "Transcript Fallback",
                     "org": "Delivery Team",
                     "report_type": self.report_type,
+                    "course_session": "第二次课 · 组织协同",
                     "date": "2026-05-24",
                     "note": "Encoding fallback",
                     "transcript": "閿焃 閸?鐠?閺?閻?瑜?",
@@ -185,6 +178,7 @@ class ScorePipelineTestCase(unittest.TestCase):
                     "name": "Restart Student",
                     "org": "Delivery Team",
                     "report_type": self.report_type,
+                    "course_session": "第二次课 · 组织协同",
                     "date": "2026-05-24",
                     "note": "Restart persistence",
                     "transcript": "Transcript for persistence verification.",

@@ -1,34 +1,48 @@
 import re
-import zlib
+from io import BytesIO
 
-from .core.text_quality import looks_like_garbled_text, looks_like_garbled_fragment
+from pypdf import PdfReader
+
+from .core.text_quality import looks_like_garbled_text
 
 
 class PdfExtractionError(Exception):
     pass
 
 
-STREAM_RE = re.compile(rb"stream\r?\n(.*?)\r?\nendstream", re.S)
-LITERAL_RE = re.compile(rb"\((?:\\.|[^\\()])*\)")
-HEX_RE = re.compile(rb"<([0-9A-Fa-f\s]+)>")
-
-
 def extract_text_from_pdf_bytes(data):
     if not data.startswith(b"%PDF"):
         raise PdfExtractionError("上传的文件不是有效的 PDF。")
 
+    return _extract_with_pypdf(data)
+
+
+def _extract_with_pypdf(data):
+    try:
+        reader = PdfReader(BytesIO(data))
+    except Exception as exc:
+        raise PdfExtractionError("PDF 解析失败，请确认文件未损坏或加密。") from exc
+
     candidates = []
-    for stream in _iter_streams(data):
-        candidates.extend(_extract_candidates(stream))
+    for page in reader.pages:
+        try:
+            candidates.append(page.extract_text() or "")
+        except Exception:
+            continue
+    return _clean_extracted_candidates(candidates)
 
-    if not candidates:
-        candidates.extend(_extract_candidates(data))
 
+def _clean_extracted_candidates(candidates):
     cleaned = []
     seen = set()
     for candidate in candidates:
         line = _normalize_text(candidate)
-        if len(line) < 3 or looks_like_garbled_fragment(line) or line in seen:
+        if (
+            len(line) < 3
+            or _looks_like_binary_garbage(line)
+            or looks_like_garbled_text(line, min_suspicious=2, min_ratio=0.35)
+            or line in seen
+        ):
             continue
         seen.add(line)
         cleaned.append(line)
@@ -46,131 +60,42 @@ def extract_text_from_pdf_bytes(data):
     return merged
 
 
-def _iter_streams(data):
-    for match in STREAM_RE.finditer(data):
-        stream = match.group(1)
-        yield stream
-        try:
-            yield zlib.decompress(stream)
-        except Exception:
-            continue
-
-
-def _extract_candidates(blob):
-    candidates = []
-    for literal in LITERAL_RE.findall(blob):
-        text = _decode_pdf_literal(literal[1:-1])
-        if _looks_like_text(text):
-            candidates.append(text)
-
-    for match in HEX_RE.findall(blob):
-        text = _decode_hex_string(match)
-        if _looks_like_text(text):
-            candidates.append(text)
-
-    return candidates
-
-
-def _decode_pdf_literal(raw):
-    out = bytearray()
-    idx = 0
-    while idx < len(raw):
-        value = raw[idx]
-        if value != 92:
-            out.append(value)
-            idx += 1
-            continue
-
-        idx += 1
-        if idx >= len(raw):
-            break
-        escaped = raw[idx]
-        idx += 1
-        mapping = {
-            ord("n"): b"\n",
-            ord("r"): b"\r",
-            ord("t"): b"\t",
-            ord("b"): b"\b",
-            ord("f"): b"\f",
-            ord("("): b"(",
-            ord(")"): b")",
-            ord("\\"): b"\\",
-        }
-        if escaped in mapping:
-            out.extend(mapping[escaped])
-            continue
-        if 48 <= escaped <= 55:
-            octal = bytes([escaped])
-            for _ in range(2):
-                if idx < len(raw) and 48 <= raw[idx] <= 55:
-                    octal += bytes([raw[idx]])
-                    idx += 1
-                else:
-                    break
-            out.append(int(octal, 8))
-            continue
-        out.append(escaped)
-    return _decode_text_bytes(bytes(out))
-
-
-def _decode_hex_string(raw):
-    hex_text = re.sub(rb"\s+", b"", raw)
-    if len(hex_text) % 2 == 1:
-        hex_text = hex_text[:-1]
-    if not hex_text:
-        return ""
-    try:
-        payload = bytes.fromhex(hex_text.decode("ascii"))
-    except Exception:
-        return ""
-    return _decode_text_bytes(payload)
-
-
-def _decode_text_bytes(payload):
-    if not payload:
-        return ""
-    if payload.startswith(b"\xfe\xff"):
-        try:
-            return payload[2:].decode("utf-16-be")
-        except Exception:
-            pass
-    if payload.startswith(b"\xff\xfe"):
-        try:
-            return payload[2:].decode("utf-16-le")
-        except Exception:
-            pass
-
-    if b"\x00" in payload and len(payload) % 2 == 0:
-        for encoding in ("utf-16-be", "utf-16-le"):
-            try:
-                decoded = payload.decode(encoding)
-                if _looks_like_text(decoded):
-                    return decoded
-            except Exception:
-                continue
-
-    for encoding in ("utf-8", "gb18030", "latin-1"):
-        try:
-            decoded = payload.decode(encoding)
-            if _looks_like_text(decoded):
-                return decoded
-        except Exception:
-            continue
-    return ""
-
-
-def _looks_like_text(value):
-    if not value:
-        return False
-    trimmed = re.sub(r"\s+", "", value)
-    if len(trimmed) < 2:
-        return False
-    meaningful = sum(1 for char in trimmed if char.isalnum() or "\u4e00" <= char <= "\u9fff")
-    return meaningful >= max(2, len(trimmed) // 3)
-
-
 def _normalize_text(value):
-    cleaned = value.replace("\x00", " ")
+    cleaned = _repair_latin1_mojibake(value).replace("\x00", " ")
     cleaned = re.sub(r"\\[rn]", " ", cleaned)
     cleaned = re.sub(r"\s+", " ", cleaned)
     return cleaned.strip()
+
+
+def _repair_latin1_mojibake(value):
+    try:
+        repaired = value.encode("latin-1").decode("utf-8")
+    except Exception:
+        return value
+    if _text_quality_score(repaired) > _text_quality_score(value):
+        return repaired
+    return value
+
+
+def _looks_like_binary_garbage(value):
+    compact = re.sub(r"\s+", "", value or "")
+    if not compact:
+        return True
+    control_count = sum(1 for char in compact if ord(char) < 32)
+    latin1_count = sum(1 for char in compact if 128 <= ord(char) <= 255)
+    meaningful = sum(1 for char in compact if char.isascii() and char.isalnum() or "\u4e00" <= char <= "\u9fff")
+    if control_count >= 2:
+        return True
+    if latin1_count >= 8 and meaningful < len(compact) // 3:
+        return True
+    return False
+
+
+def _text_quality_score(value):
+    compact = re.sub(r"\s+", "", value or "")
+    if not compact:
+        return 0
+    chinese = sum(1 for char in compact if "\u4e00" <= char <= "\u9fff")
+    ascii_alnum = sum(1 for char in compact if char.isascii() and char.isalnum())
+    suspicious = sum(1 for char in compact if "\u0080" <= char <= "\u00ff")
+    return (chinese * 3) + ascii_alnum - suspicious

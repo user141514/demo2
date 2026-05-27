@@ -2,6 +2,7 @@ import os
 import shutil
 import tempfile
 import unittest
+from pathlib import Path
 from unittest.mock import patch
 
 from scoring_app import create_app
@@ -18,6 +19,14 @@ class LiveProviderFallbackTestCase(unittest.TestCase):
         self.temp_dir = tempfile.mkdtemp(prefix="demo2-live-fallback-")
         self.data_dir = os.path.join(self.temp_dir, "data")
         self.upload_dir = os.path.join(self.temp_dir, "uploads")
+        self.project_root = Path(__file__).resolve().parents[1]
+        self.dotenv_path = self.project_root / ".env"
+        self.dotenv_backup = (
+            self.dotenv_path.read_text(encoding="utf-8")
+            if self.dotenv_path.exists()
+            else None
+        )
+        self.dotenv_path.unlink(missing_ok=True)
         self.env_keys = [
             "SCORING_APP_DATA_DIR",
             "SCORING_APP_UPLOAD_DIR",
@@ -36,6 +45,9 @@ class LiveProviderFallbackTestCase(unittest.TestCase):
         os.environ["OPENAI_BASE_URL"] = "https://example.invalid"
         os.environ["OPENAI_MODEL"] = "dummy-model"
 
+        from scoring_app.llm_config import load_llm_settings
+
+        load_llm_settings.cache_clear()
         from scoring_app.markdown_export import build_markdown
 
         write_real_fixture_files(build_markdown)
@@ -50,7 +62,58 @@ class LiveProviderFallbackTestCase(unittest.TestCase):
                 os.environ.pop(key, None)
             else:
                 os.environ[key] = value
+        from scoring_app.llm_config import load_llm_settings
+
+        load_llm_settings.cache_clear()
+        if self.dotenv_backup is None:
+            self.dotenv_path.unlink(missing_ok=True)
+        else:
+            self.dotenv_path.write_text(self.dotenv_backup, encoding="utf-8")
         shutil.rmtree(self.temp_dir, ignore_errors=True)
+
+    def test_default_live_provider_targets_deepseek_without_key(self):
+        for key in ("SCORING_LLM_MODE", "OPENAI_API_KEY", "OPENAI_BASE_URL", "OPENAI_MODEL"):
+            os.environ.pop(key, None)
+
+        from scoring_app.llm_config import load_llm_settings
+
+        load_llm_settings.cache_clear()
+        settings = load_llm_settings()
+
+        self.assertEqual(settings["llm_mode"], "live")
+        self.assertEqual(settings["openai_base_url"], "https://api.deepseek.com")
+        self.assertEqual(settings["openai_model"], "deepseek-v4-pro")
+        self.assertFalse(settings["openai_api_key"])
+
+    def test_dotenv_values_are_loaded_before_process_env_overrides(self):
+        for key in ("SCORING_LLM_MODE", "OPENAI_API_KEY", "OPENAI_BASE_URL", "OPENAI_MODEL"):
+            os.environ.pop(key, None)
+
+        try:
+            self.dotenv_path.write_text(
+                "\n".join(
+                    [
+                        "SCORING_LLM_MODE=mock",
+                        "OPENAI_API_KEY=dotenv-key",
+                        "OPENAI_BASE_URL=https://dotenv.example",
+                        "OPENAI_MODEL=dotenv-model",
+                    ]
+                ),
+                encoding="utf-8",
+            )
+            os.environ["OPENAI_MODEL"] = "process-env-model"
+
+            from scoring_app.llm_config import load_llm_settings
+
+            load_llm_settings.cache_clear()
+            settings = load_llm_settings()
+
+            self.assertEqual(settings["llm_mode"], "mock")
+            self.assertEqual(settings["openai_api_key"], "dotenv-key")
+            self.assertEqual(settings["openai_base_url"], "https://dotenv.example")
+            self.assertEqual(settings["openai_model"], "process-env-model")
+        finally:
+            self.dotenv_path.unlink(missing_ok=True)
 
     def test_live_provider_exception_falls_back_and_still_persists_history(self):
         register_response = self.client.post(
