@@ -690,7 +690,7 @@ function onTranscriptFileSelected(event) {
   els.transcriptMeta.textContent = `${baseMeta} · 文件会随评分请求一并上传`;
   const reader = new FileReader();
   reader.onload = () => {
-    const preview = decodeTranscriptPreview(reader.result);
+    const preview = decodeTranscriptPreviewSafe(reader.result);
     if (hasManualText) {
       els.transcriptMeta.textContent = `${baseMeta} · 已保留当前文本框内容`;
       return;
@@ -1493,6 +1493,145 @@ function looksLikeClientGarbledText(value) {
   }
   const suspicious = (compact.match(/[�閿熼垾閵嗛張鐠囬崣閻ㄨぐ闂傞柅娴犵紒]/g) || []).length;
   return suspicious >= 2 && suspicious / compact.length >= 0.15;
+}
+
+function decodeTranscriptPreviewSafe(buffer) {
+  const bytes = buffer instanceof ArrayBuffer ? new Uint8Array(buffer) : new Uint8Array(0);
+  if (!bytes.length || typeof TextDecoder === "undefined") {
+    return { text: "", warning: "" };
+  }
+
+  const bomEncoding = detectTranscriptBomSafe(bytes);
+  if (bomEncoding) {
+    const bomDecoded = tryDecodeTranscriptSafe(bytes, bomEncoding, {
+      fatal: false,
+      stripBom: true,
+    });
+    if (bomDecoded && !bomDecoded.garbled) {
+      return {
+        text: bomDecoded.text,
+        warning:
+          bomEncoding === "utf-8"
+            ? ""
+            : "预览已按文件编码解码，提交时仍会上传原始文件",
+      };
+    }
+  }
+
+  const utf8Decoded = tryDecodeTranscriptSafe(bytes, "utf-8", {
+    fatal: true,
+    stripBom: true,
+  });
+  if (utf8Decoded && !utf8Decoded.garbled) {
+    return { text: utf8Decoded.text, warning: "" };
+  }
+
+  const gb18030Decoded = tryDecodeTranscriptSafe(bytes, "gb18030", {
+    fatal: true,
+    stripBom: false,
+  });
+  if (gb18030Decoded && !gb18030Decoded.garbled) {
+    return {
+      text: gb18030Decoded.text,
+      warning: "预览已按兼容编码解码，提交时仍会上传原始文件",
+    };
+  }
+
+  if (looksLikeUtf16PayloadSafe(bytes)) {
+    const utf16leDecoded = tryDecodeTranscriptSafe(bytes, "utf-16le", {
+      fatal: false,
+      stripBom: true,
+    });
+    if (utf16leDecoded && !utf16leDecoded.garbled) {
+      return {
+        text: utf16leDecoded.text,
+        warning: "预览已按 UTF-16 编码解码，提交时仍会上传原始文件",
+      };
+    }
+
+    const utf16beDecoded = tryDecodeTranscriptSafe(bytes, "utf-16be", {
+      fatal: false,
+      stripBom: true,
+    });
+    if (utf16beDecoded && !utf16beDecoded.garbled) {
+      return {
+        text: utf16beDecoded.text,
+        warning: "预览已按 UTF-16 编码解码，提交时仍会上传原始文件",
+      };
+    }
+  }
+
+  return { text: "", warning: "检测到文本编码不稳定，已改为仅上传原始文件" };
+}
+
+function detectTranscriptBomSafe(bytes) {
+  if (bytes.length >= 3 && bytes[0] === 0xef && bytes[1] === 0xbb && bytes[2] === 0xbf) {
+    return "utf-8";
+  }
+  if (bytes.length >= 2 && bytes[0] === 0xff && bytes[1] === 0xfe) {
+    return "utf-16le";
+  }
+  if (bytes.length >= 2 && bytes[0] === 0xfe && bytes[1] === 0xff) {
+    return "utf-16be";
+  }
+  return "";
+}
+
+function looksLikeUtf16PayloadSafe(bytes) {
+  if (!bytes.length || bytes.length % 2 !== 0) {
+    return false;
+  }
+
+  let zeroBytes = 0;
+  for (let index = 0; index < bytes.length; index += 1) {
+    if (bytes[index] === 0x00) {
+      zeroBytes += 1;
+    }
+  }
+  return zeroBytes / bytes.length >= 0.08;
+}
+
+function tryDecodeTranscriptSafe(bytes, encoding, options = {}) {
+  try {
+    const decoder = new TextDecoder(encoding, { fatal: Boolean(options.fatal) });
+    let text = decoder.decode(bytes);
+    if (options.stripBom && text.charCodeAt(0) === 0xfeff) {
+      text = text.slice(1);
+    }
+    const normalized = String(text || "")
+      .replace(/\u0000/g, " ")
+      .replace(/\r\n/g, "\n")
+      .replace(/\r/g, "\n")
+      .replace(/\n{3,}/g, "\n\n")
+      .trim();
+    if (!normalized) {
+      return null;
+    }
+    return {
+      text: normalized,
+      garbled: looksLikeClientGarbledTextSafe(normalized),
+    };
+  } catch {
+    return null;
+  }
+}
+
+function looksLikeClientGarbledTextSafe(value) {
+  const compact = String(value || "").replace(/\s+/g, "");
+  if (!compact) {
+    return false;
+  }
+
+  const suspiciousChars =
+    (compact.match(/[�锟銆锛鈥鎴鐨鏄鍦鍙浠闂璇鏈鍚鏉瀵澶绗寮鍥鎺]/g) || []).length;
+  const suspiciousFragments =
+    (
+      compact.match(
+        /(?:澶у|鍥犱负|鎴戜滑|浠婂ぉ|绗竴|绗簩|鐩爣|闂|琛屽姩|缁撴灉|鎬荤粨|璇存槑|褰撳墠|鏉愭枡|姹囨姤|鍚庣画)/g
+      ) || []
+    ).length;
+
+  return suspiciousFragments >= 1 || (suspiciousChars >= 3 && suspiciousChars / compact.length >= 0.08);
 }
 
 function getExportUrl(format, id) {
