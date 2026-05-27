@@ -68,6 +68,7 @@ def _build_blocks(result):
         {"style": "body", "text": "姓名：{}".format(_safe_text(result.get("name"))), "before": 0, "after": 6},
         {"style": "body", "text": "所属组织/部门：{}".format(_safe_text(result.get("org"))), "before": 0, "after": 6},
         {"style": "body", "text": "汇报类型：{}".format(_safe_text(result.get("report_type"))), "before": 0, "after": 6},
+        {"style": "body", "text": "对应课次：{}".format(_safe_text(result.get("course_session"))), "before": 0, "after": 6},
         {"style": "body", "text": "评分日期：{}".format(_safe_text(result.get("date"))), "before": 0, "after": 6},
         {"style": "body", "text": "备注：{}".format(_safe_text(result.get("note"))), "before": 0, "after": 14},
         {
@@ -82,14 +83,7 @@ def _build_blocks(result):
             "before": 0,
             "after": 14,
         },
-        {"style": "section", "text": "总评", "before": 0, "after": 10},
-        {
-            "style": "body",
-            "text": _safe_text(result.get("overall_comment")),
-            "before": 0,
-            "after": 18,
-        },
-        {"style": "section", "text": "各维度评分明细", "before": 0, "after": 12},
+        {"style": "section", "text": "一级维度明细", "before": 0, "after": 12},
     ]
 
     for group_name, dimensions in groups.items():
@@ -138,7 +132,16 @@ def _build_blocks(result):
             )
 
     blocks.append({"style": "section", "text": "结论与建议", "before": 6, "after": 10})
-    blocks.append({"style": "subsection", "text": "优势亮点", "before": 0, "after": 8})
+    blocks.append({"style": "subsection", "text": "总评", "before": 0, "after": 8})
+    blocks.append(
+        {
+            "style": "body",
+            "text": _safe_text(result.get("overall_comment")),
+            "before": 0,
+            "after": 12,
+        }
+    )
+    blocks.append({"style": "subsection", "text": "优势与亮点", "before": 0, "after": 8})
     for item in result.get("strengths") or []:
         blocks.append({"style": "body", "text": "- {}".format(_safe_text(item)), "before": 0, "after": 5})
 

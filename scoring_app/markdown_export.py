@@ -16,6 +16,7 @@ def build_markdown(result):
         "| 姓名 | {} |".format(result["name"]),
         "| 所属组织/部门 | {} |".format(result["org"]),
         "| 汇报类型 | {} |".format(result["report_type"]),
+        "| 对应课次 | {} |".format(result.get("course_session") or "--"),
         "| 评分日期 | {} |".format(result["date"]),
         "| 备注 | {} |".format(result["note"] or "--"),
         "",
@@ -25,13 +26,9 @@ def build_markdown(result):
         "",
         "**{} 分**（满分100分）".format(result["total_score"]),
         "",
-        "## 总评",
-        "",
-        result["overall_comment"],
-        "",
         "---",
         "",
-        "## 各维度评分明细",
+        "## 一级维度明细",
         "",
     ]
 
@@ -57,7 +54,20 @@ def build_markdown(result):
                 ]
             )
 
-    lines.extend(["---", "", "## 结论与建议", "", "### 优势亮点", ""])
+    lines.extend(
+        [
+            "---",
+            "",
+            "## 结论与建议",
+            "",
+            "### 总评",
+            "",
+            result["overall_comment"],
+            "",
+            "### 优势与亮点",
+            "",
+        ]
+    )
     for item in result["strengths"]:
         lines.append("- {}".format(item))
     lines.extend(["", "### 改进方向", ""])

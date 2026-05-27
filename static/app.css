@@ -283,8 +283,9 @@ button {
   grid-template-columns: minmax(0, 1.1fr) minmax(0, 0.9fr);
 }
 
-.result-grid {
-  grid-template-columns: minmax(0, 1.15fr) minmax(280px, 0.85fr);
+.result-sections {
+  display: grid;
+  gap: 18px;
   margin-top: 18px;
 }
 
@@ -658,9 +659,36 @@ select {
   line-height: 1.5;
 }
 
-.result-side .panel-body {
+.result-conclusions .panel-body {
   display: grid;
   gap: 18px;
+}
+
+.conclusion-layout {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.conclusion-card {
+  padding: 16px 18px;
+  border: 1px solid rgba(63, 41, 72, 0.08);
+  border-radius: 16px;
+  background: var(--surface-soft);
+}
+
+.conclusion-card h3 {
+  margin: 0 0 10px;
+  font-size: 0.96rem;
+  color: var(--purple);
+}
+
+.conclusion-card p {
+  margin: 0;
+  line-height: 1.8;
+}
+
+.conclusion-summary,
+.result-conclusions .disclaimer {
+  grid-column: 1 / -1;
 }
 
 .side-title {
@@ -979,8 +1007,8 @@ select {
 
   .result-hero,
   .two-col,
-  .result-grid,
   .result-stats,
+  .conclusion-layout,
   .history-toolbar {
     grid-template-columns: 1fr;
   }

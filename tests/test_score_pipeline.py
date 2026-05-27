@@ -62,6 +62,7 @@ class ScorePipelineTestCase(unittest.TestCase):
                     "name": "测试学员",
                     "org": "交付一部",
                     "report_type": self.report_type,
+                    "course_session": "第二次课 · 组织协同",
                     "date": "2026-05-24",
                     "note": "通路测试",
                     "transcript": "这是录音转写内容，用于验证文档和录音双材料评分流程。",
@@ -75,6 +76,7 @@ class ScorePipelineTestCase(unittest.TestCase):
         score_id = score_payload["score_id"]
         self.assertEqual(score_payload["name"], "测试学员")
         self.assertEqual(score_payload["org"], "交付一部")
+        self.assertEqual(score_payload["course_session"], "第二次课 · 组织协同")
         self.assertEqual(
             score_payload["markdown_export_url"],
             "/api/scores/{}/export?format=md".format(score_id),
@@ -89,12 +91,14 @@ class ScorePipelineTestCase(unittest.TestCase):
         history_items = history_response.get_json()["items"]
         self.assertEqual(len(history_items), 1)
         self.assertEqual(history_items[0]["score_id"], score_id)
+        self.assertEqual(history_items[0]["course_session"], "第二次课 · 组织协同")
         self.assertEqual(history_items[0]["manual_score_status"], "pending")
 
         detail_response = self.client.get("/api/scores/{}".format(score_id))
         self.assertEqual(detail_response.status_code, 200)
         detail_payload = detail_response.get_json()
         self.assertEqual(detail_payload["score_id"], score_id)
+        self.assertEqual(detail_payload["course_session"], "第二次课 · 组织协同")
         self.assertEqual(detail_payload["pdf_export_url"], "/api/scores/{}/export?format=pdf".format(score_id))
         self.assertEqual(len(detail_payload["dimensions"]), 3)
         self.assertTrue(detail_payload["transcript_present"])
@@ -109,7 +113,11 @@ class ScorePipelineTestCase(unittest.TestCase):
             export_text = export_response.get_data(as_text=True)
             self.assertIn("测试学员", export_text)
             self.assertIn(self.report_type, export_text)
+            self.assertIn("第二次课 · 组织协同", export_text)
             self.assertIn("综合表现稳健", export_text)
+            self.assertLess(export_text.index("## 一级维度明细"), export_text.index("## 结论与建议"))
+            self.assertLess(export_text.index("### 总评"), export_text.index("### 优势与亮点"))
+            self.assertLess(export_text.index("### 优势与亮点"), export_text.index("### 改进方向"))
         finally:
             export_response.close()
 

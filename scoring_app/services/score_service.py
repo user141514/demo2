@@ -10,11 +10,23 @@ from ..scoring import ScoringError, score_submission
 from ..utils import save_upload
 
 
+COURSE_SESSION_OPTIONS = {
+    "第一次课 · 管理认知",
+    "第二次课 · 组织协同",
+    "第三次课 · 问题解决",
+    "第四次课",
+    "第五次课",
+    "第六次课",
+    "中期回顾工作坊",
+}
+
+
 @dataclass
 class ScoreSubmissionInput:
     name: str
     org: str
     report_type: str
+    course_session: str
     score_date: str
     note: str
     transcript: str
@@ -40,6 +52,7 @@ def create_score(form, files, user_id):
             metadata={
                 "name": submission.name,
                 "org": submission.org,
+                "course_session": submission.course_session,
                 "date": submission.score_date,
                 "note": submission.note,
                 "pdf_filename": submission.pdf_file.filename,
@@ -51,6 +64,7 @@ def create_score(form, files, user_id):
         raise ApplicationError("score_failed", str(exc), 422)
 
     result["user_id"] = user_id
+    result["course_session"] = submission.course_session
     result["markdown_export_url"] = "/api/scores/{}/export?format=md".format(
         result["score_id"]
     )
@@ -119,6 +133,7 @@ def _parse_submission(form, files):
     name = (form.get("name") or "").strip()
     org = (form.get("org") or "").strip()
     report_type = (form.get("report_type") or "").strip()
+    course_session = (form.get("course_session") or "").strip()
     score_date = (form.get("date") or "").strip()
     note = (form.get("note") or "").strip()
     transcript = (form.get("transcript") or "").strip()
@@ -131,6 +146,8 @@ def _parse_submission(form, files):
         raise ApplicationError("missing_org", "Organization is required.", 400)
     if report_type not in REPORT_DEFINITIONS:
         raise ApplicationError("invalid_report_type", "A valid report type is required.", 400)
+    if course_session not in COURSE_SESSION_OPTIONS:
+        raise ApplicationError("invalid_course_session", "A valid course session is required.", 400)
     if not score_date:
         raise ApplicationError("missing_date", "Score date is required.", 400)
     if pdf_file is None or not pdf_file.filename:
@@ -150,6 +167,7 @@ def _parse_submission(form, files):
         name=name,
         org=org,
         report_type=report_type,
+        course_session=course_session,
         score_date=score_date,
         note=note,
         transcript=transcript,

@@ -49,6 +49,7 @@ def init_db():
                 name TEXT NOT NULL,
                 org TEXT NOT NULL,
                 report_type TEXT NOT NULL,
+                course_session TEXT,
                 score_date TEXT NOT NULL,
                 note TEXT,
                 pdf_filename TEXT,
@@ -91,6 +92,12 @@ def init_db():
             "scores",
             "user_id",
             "ALTER TABLE scores ADD COLUMN user_id TEXT REFERENCES users(user_id)",
+        )
+        _ensure_column(
+            connection,
+            "scores",
+            "course_session",
+            "ALTER TABLE scores ADD COLUMN course_session TEXT",
         )
         connection.execute(
             """
@@ -346,13 +353,13 @@ def store_score(result):
         connection.execute(
             """
             INSERT INTO scores (
-                score_id, user_id, name, org, report_type, score_date, note, pdf_filename,
+                score_id, user_id, name, org, report_type, course_session, score_date, note, pdf_filename,
                 upload_path, document_preview, transcript_present, total_score,
                 total_level, doc_average, audio_average, lowest_dimension_name,
                 lowest_dimension_score, overall_comment, strengths_json,
                 improvements_json, disclaimer, created_at
             )
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 result["score_id"],
@@ -360,6 +367,7 @@ def store_score(result):
                 result["name"],
                 result["org"],
                 result["report_type"],
+                result.get("course_session", ""),
                 result["date"],
                 result["note"],
                 result["pdf_filename"],
@@ -412,7 +420,7 @@ def list_scores(user_id):
     try:
         rows = connection.execute(
             """
-            SELECT score_id, name, org, report_type, score_date, total_score,
+            SELECT score_id, name, org, report_type, course_session, score_date, total_score,
                    total_level, created_at
             FROM scores
             WHERE user_id = ?
@@ -427,6 +435,7 @@ def list_scores(user_id):
                     "name": row["name"],
                     "org": row["org"],
                     "report_type": row["report_type"],
+                    "course_session": row["course_session"] or "",
                     "date": row["score_date"],
                     "total_score": row["total_score"],
                     "total_level": row["total_level"],
@@ -475,6 +484,7 @@ def get_score_detail(score_id, user_id):
             "name": row["name"],
             "org": row["org"],
             "report_type": row["report_type"],
+            "course_session": row["course_session"] or "",
             "date": row["score_date"],
             "note": row["note"] or "",
             "pdf_filename": row["pdf_filename"] or "",

@@ -75,6 +75,7 @@ class LiveProviderFallbackTestCase(unittest.TestCase):
                     "name": "LLM 回退样例",
                     "org": "培训交付中心",
                     "report_type": self.report_type,
+                    "course_session": "第二次课 · 组织协同",
                     "date": "2026-05-25",
                     "note": "live-provider-fallback",
                     "transcript": "",
