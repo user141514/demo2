@@ -428,43 +428,6 @@ def store_score(result):
 def store_score_bundle(result, artifacts=None):
     connection = get_connection()
     try:
-        connection.execute(
-            """
-            INSERT INTO scores (
-                score_id, user_id, name, org, report_type, course_session, score_date, note, pdf_filename,
-                upload_path, document_preview, transcript_present, total_score,
-                total_level, doc_average, audio_average, lowest_dimension_name,
-                lowest_dimension_score, overall_comment, strengths_json,
-                improvements_json, disclaimer, created_at
-            )
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-            """,
-            (
-                result["score_id"],
-                result["user_id"],
-                result["name"],
-                result["org"],
-                result["report_type"],
-                result.get("course_session", ""),
-                result["date"],
-                result["note"],
-                result["pdf_filename"],
-                result["upload_path"],
-                result["document_preview"],
-                1 if result["transcript_present"] else 0,
-                result["total_score"],
-                result["total_level"],
-                result["doc_average"],
-                result["audio_average"],
-                result["lowest_dimension"]["name"],
-                result["lowest_dimension"]["score"],
-                result["overall_comment"],
-                json.dumps(result["strengths"], ensure_ascii=False),
-                json.dumps(result["improvements"], ensure_ascii=False),
-                result["disclaimer"],
-                result["created_at"],
-            ),
-        )
         _insert_score(connection, result)
         for dimension in result["dimensions"]:
             _insert_score_dimension(connection, result["score_id"], dimension)
@@ -691,14 +654,14 @@ def _insert_score(connection, result):
     connection.execute(
         """
         INSERT INTO scores (
-            score_id, user_id, name, org, report_type, score_date, note, pdf_filename,
+            score_id, user_id, name, org, report_type, course_session, score_date, note, pdf_filename,
             upload_path, document_preview, transcript_present, total_score,
             total_level, doc_average, audio_average, lowest_dimension_name,
             lowest_dimension_score, overall_comment, strengths_json,
             improvements_json, disclaimer, created_at,
             scoring_mode, data_completeness
         )
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """,
         (
             result["score_id"],
@@ -706,6 +669,7 @@ def _insert_score(connection, result):
             result["name"],
             result["org"],
             result["report_type"],
+            result.get("course_session", ""),
             result["date"],
             result["note"],
             result["pdf_filename"],
