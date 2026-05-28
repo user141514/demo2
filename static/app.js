@@ -5,6 +5,7 @@ const API = {
   authLogout: "/api/auth/logout",
   authForgotPassword: "/api/auth/forgot-password",
   authResetPassword: "/api/auth/reset-password",
+  reportTypes: "/api/report-types",
   score: "/api/score",
   scores: "/api/scores",
   scoreDetail: (id) => `/api/scores/${encodeURIComponent(id)}`,
@@ -13,6 +14,32 @@ const API = {
 };
 
 const AUTH_MODES = ["login", "register", "forgot", "reset"];
+
+const DEFAULT_REPORT_TYPES = [
+  { key: "温故知新", name: "温故知新", description: "个人汇报 · 10个子维度" },
+  { key: "行动学习", name: "行动学习", description: "作业汇报 · 7个子维度" },
+  {
+    key: "行动学习-认知升级",
+    name: "行动学习-认知升级",
+    description: "第一次课程《趋势变局下MBA管理者的认知升级》专用",
+  },
+  {
+    key: "行动学习-组织协同",
+    name: "行动学习-组织协同",
+    description: "第二次课程《组织协同》专用",
+  },
+  {
+    key: "行动学习-问题解决",
+    name: "行动学习-问题解决",
+    description: "第三次课程《问题解决能力提升》专用",
+  },
+];
+
+const REPORT_TYPE_COURSE_SESSION = {
+  "行动学习-认知升级": "第一次课 · 管理认知",
+  "行动学习-组织协同": "第二次课 · 组织协同",
+  "行动学习-问题解决": "第三次课 · 问题解决",
+};
 
 const state = {
   authed: false,
@@ -24,6 +51,7 @@ const state = {
   currentScore: null,
   currentHistoryItem: null,
   history: [],
+  reportTypes: [],
   loadingTimer: null,
 };
 
@@ -36,6 +64,8 @@ async function init() {
   bindEvents();
   setTodayDefault();
   showPage("score");
+  renderReportTypeOptions(DEFAULT_REPORT_TYPES);
+  await loadReportTypes();
 
   const resetToken = getResetTokenFromUrl();
   if (resetToken) {
@@ -165,6 +195,7 @@ function bindEvents() {
     event.preventDefault();
     submitScore();
   });
+  els.fieldReportType.addEventListener("change", syncCourseSessionForReportType);
   els.submitScore.addEventListener("click", submitScore);
   els.resetForm.addEventListener("click", resetScoreForm);
   els.exportPdf.addEventListener("click", exportPdf);
@@ -197,6 +228,64 @@ async function restoreSession() {
       type: "error",
     });
   }
+}
+
+async function loadReportTypes() {
+  try {
+    const payload = await requestJson(API.reportTypes, { method: "GET" });
+    const reportTypes = normalizeReportTypes(payload.items);
+    if (reportTypes.length) {
+      renderReportTypeOptions(reportTypes);
+    }
+  } catch (error) {
+    console.warn("failed to load report types", error);
+  }
+}
+
+function renderReportTypeOptions(items) {
+  const reportTypes = normalizeReportTypes(items);
+  if (!reportTypes.length || !els.fieldReportType) {
+    return;
+  }
+
+  const currentValue = els.fieldReportType.value;
+  els.fieldReportType.innerHTML = [
+    '<option value="">请选择</option>',
+    ...reportTypes.map((item) => {
+      const label = item.description ? `${item.name}｜${item.description}` : item.name;
+      return `<option value="${escapeAttr(item.key)}">${escapeHtml(label)}</option>`;
+    }),
+  ].join("");
+
+  if (reportTypes.some((item) => item.key === currentValue)) {
+    els.fieldReportType.value = currentValue;
+  }
+  state.reportTypes = reportTypes;
+  syncCourseSessionForReportType();
+}
+
+function syncCourseSessionForReportType() {
+  if (!els.fieldReportType || !els.fieldCourseSession) {
+    return;
+  }
+  const preferredSession = REPORT_TYPE_COURSE_SESSION[els.fieldReportType.value];
+  if (!preferredSession) {
+    return;
+  }
+  els.fieldCourseSession.value = preferredSession;
+}
+
+function normalizeReportTypes(items) {
+  if (!Array.isArray(items)) {
+    return [];
+  }
+  return items
+    .map((item) => ({
+      key: String(item.key || item.name || "").trim(),
+      name: String(item.name || item.key || "").trim(),
+      description: String(item.description || "").trim(),
+    }))
+    .filter((item) => item.key && item.name);
 }
 
 function enterGuestApp(options = {}) {
@@ -1317,6 +1406,7 @@ function historyItemFromScore(score) {
     name: score?.name ?? "--",
     org: score?.org ?? "--",
     reportType: score?.reportType ?? score?.type ?? "--",
+    courseSession: score?.courseSession ?? "--",
     totalScore: numberOrNull(score?.totalScore),
     manualAvg: null,
     date: score?.date ?? "--",

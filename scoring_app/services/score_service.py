@@ -203,7 +203,10 @@ def build_score_export(score_id, user_id, export_format):
 
 
 def list_report_type_values():
-    return list(REPORT_DEFINITIONS.values())
+    return [
+        {"key": report_type, **definition}
+        for report_type, definition in REPORT_DEFINITIONS.items()
+    ]
 
 
 def list_report_type_keys():

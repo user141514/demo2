@@ -1,3 +1,6 @@
+from pathlib import Path
+
+
 REPORT_DEFINITIONS = {
     "温故知新": {
         "id": "wg",
@@ -227,6 +230,257 @@ REPORT_DEFINITIONS = {
         ],
     },
 }
+
+
+_ACTION_LEARNING_GROUPS = [
+    {"name": "作业评价", "weight": 80.0, "source": "文档"},
+    {"name": "呈现效果评价", "weight": 20.0, "source": "录音转写"},
+]
+
+
+_ACTION_LEARNING_DIMENSIONS = [
+    (1, "直面问题", "作业评价", 80.0, 16.0, "document", "文档", "问题穿透深度", True),
+    (2, "创新构想", "作业评价", 80.0, 12.0, "document", "文档", "方案差异化价值", False),
+    (3, "结构性方法", "作业评价", 80.0, 12.0, "document", "文档", "方案严谨性", False),
+    (4, "可操作性", "作业评价", 80.0, 24.0, "document", "文档", "落地可行性", False),
+    (5, "表达清晰", "呈现效果评价", 20.0, 2.0, "transcript", "录音转写", "信息传递效率", False),
+    (6, "回答问题", "呈现效果评价", 20.0, 1.0, "transcript", "录音转写", "互动响应质量", False),
+    (7, "时间管理", "呈现效果评价", 20.0, 1.0, "transcript", "录音转写", "流程管控能力", True),
+]
+
+
+_ACTION_LEARNING_PRESENTATION_KEYWORDS = {
+    "表达清晰": ["表达", "清晰", "重点", "结构", "层次", "PPT", "图表"],
+    "回答问题": ["提问", "回答", "问题", "补充", "回应", "质疑"],
+    "时间管理": ["时间", "分钟", "节奏", "安排", "控制", "进度"],
+}
+
+
+def _build_action_learning_course_definition(
+    definition_id,
+    name,
+    description,
+    knowledge_base_path,
+    dimension_keywords,
+):
+    dimensions = []
+    for (
+        dim_id,
+        dim_name,
+        group,
+        group_weight,
+        actual_weight,
+        source_key,
+        material_source,
+        focus,
+        needs_numbers,
+    ) in _ACTION_LEARNING_DIMENSIONS:
+        dimensions.append(
+            {
+                "id": dim_id,
+                "name": dim_name,
+                "group": group,
+                "group_weight": group_weight,
+                "actual_weight": actual_weight,
+                "source_key": source_key,
+                "material_source": material_source,
+                "focus": focus,
+                "keywords": dimension_keywords.get(
+                    dim_name, _ACTION_LEARNING_PRESENTATION_KEYWORDS.get(dim_name, [])
+                ),
+                "needs_numbers": needs_numbers,
+            }
+        )
+
+    return {
+        "id": definition_id,
+        "name": name,
+        "description": description,
+        "knowledge_base_path": knowledge_base_path,
+        "groups": list(_ACTION_LEARNING_GROUPS),
+        "dimensions": dimensions,
+    }
+
+
+REPORT_DEFINITIONS.update(
+    {
+        "行动学习-认知升级": _build_action_learning_course_definition(
+            "xl_course_1",
+            "行动学习-认知升级",
+            "第一次课程《趋势变局下MBA管理者的认知升级》专用",
+            "知识库和评分标准/1.md",
+            {
+                "直面问题": [
+                    "测评",
+                    "商业综合推理",
+                    "管理技能",
+                    "管理个性",
+                    "管理风格",
+                    "职业锚",
+                    "PEST",
+                    "短板",
+                    "瓶颈",
+                ],
+                "创新构想": [
+                    "ASTRAL",
+                    "IDP",
+                    "轮岗",
+                    "项目历练",
+                    "AI",
+                    "第三次创业",
+                    "组织发展",
+                ],
+                "结构性方法": [
+                    "IDP七步法",
+                    "自我评估",
+                    "环境评估",
+                    "职业选择",
+                    "确定目标",
+                    "行动计划",
+                    "7-2-1",
+                    "现状",
+                    "目标",
+                    "能力",
+                ],
+                "可操作性": [
+                    "行动步骤",
+                    "时间节点",
+                    "责任人",
+                    "交付物",
+                    "1年",
+                    "2年",
+                    "3年",
+                    "资源",
+                    "评价",
+                    "反馈闭环",
+                ],
+            },
+        ),
+        "行动学习-组织协同": _build_action_learning_course_definition(
+            "xl_course_2",
+            "行动学习-组织协同",
+            "第二次课程《组织协同》专用",
+            "知识库和评分标准/2.md",
+            {
+                "直面问题": [
+                    "七大协同障碍",
+                    "组织分工",
+                    "目标差异",
+                    "部门墙",
+                    "横向沟通",
+                    "协作文化",
+                    "流程",
+                    "机制",
+                    "案例",
+                ],
+                "创新构想": [
+                    "服务协同",
+                    "指导协同",
+                    "管控协同",
+                    "情感协同",
+                    "RACI",
+                    "双计双考",
+                    "满意度",
+                    "共同目标",
+                ],
+                "结构性方法": [
+                    "七大障碍",
+                    "RACI",
+                    "流程优化",
+                    "冲突处理",
+                    "情感账户",
+                    "组织",
+                    "流程",
+                    "目标",
+                    "机制",
+                    "影响力",
+                    "聚焦",
+                    "共创",
+                    "对齐",
+                    "闭环",
+                ],
+                "可操作性": [
+                    "行动步骤",
+                    "时间节点",
+                    "责任人",
+                    "交付物",
+                    "1-2周",
+                    "1-3个月",
+                    "风险",
+                    "里程碑",
+                    "资源",
+                ],
+            },
+        ),
+        "行动学习-问题解决": _build_action_learning_course_definition(
+            "xl_course_3",
+            "行动学习-问题解决",
+            "第三次课程《问题解决能力提升》专用",
+            "知识库和评分标准/3.md",
+            {
+                "直面问题": [
+                    "现象层",
+                    "流程层",
+                    "系统层",
+                    "风险面",
+                    "机会面",
+                    "问题类型",
+                    "边界",
+                    "根因",
+                ],
+                "创新构想": [
+                    "问题导向",
+                    "创新思维",
+                    "AI辅助",
+                    "差异化",
+                    "业务特性",
+                    "价值提升",
+                ],
+                "结构性方法": [
+                    "六步框架",
+                    "发现",
+                    "分析",
+                    "目标",
+                    "方案",
+                    "执行",
+                    "评估",
+                    "模糊决策",
+                    "PrOACT",
+                    "5W2H",
+                    "5Why",
+                    "数据驱动",
+                ],
+                "可操作性": [
+                    "行动步骤",
+                    "时间节点",
+                    "责任人",
+                    "交付物",
+                    "资源",
+                    "风险",
+                    "应对措施",
+                    "阶段性目标",
+                    "最终目标",
+                ],
+            },
+        ),
+    }
+)
+
+
+def load_knowledge_base_text(definition, max_chars=20000):
+    knowledge_base_path = definition.get("knowledge_base_path")
+    if not knowledge_base_path:
+        return ""
+
+    path = Path(__file__).resolve().parents[1] / knowledge_base_path
+    try:
+        text = path.read_text(encoding="utf-8").strip()
+    except OSError:
+        return ""
+
+    if len(text) <= max_chars:
+        return text
+    return text[:max_chars].rstrip() + "\n\n[评分标准内容已按长度截断]"
 
 
 LEVEL_RULES = [

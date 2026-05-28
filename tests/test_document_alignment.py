@@ -1,6 +1,11 @@
 import unittest
+from pathlib import Path
 
 from scoring_app.rules import DISCLAIMER, LEVEL_RULES, REPORT_DEFINITIONS, TOTAL_LEVEL_RULES
+from scoring_app.live_scoring import _build_user_prompt
+
+
+PROJECT_ROOT = Path(__file__).resolve().parents[1]
 
 
 class DocumentAlignmentTestCase(unittest.TestCase):
@@ -26,6 +31,51 @@ class DocumentAlignmentTestCase(unittest.TestCase):
                 ],
             },
             "行动学习": {
+                "groups": [
+                    ("作业评价", 80.0, "文档"),
+                    ("呈现效果评价", 20.0, "录音转写"),
+                ],
+                "dimensions": [
+                    ("直面问题", 16.0, "文档"),
+                    ("创新构想", 12.0, "文档"),
+                    ("结构性方法", 12.0, "文档"),
+                    ("可操作性", 24.0, "文档"),
+                    ("表达清晰", 2.0, "录音转写"),
+                    ("回答问题", 1.0, "录音转写"),
+                    ("时间管理", 1.0, "录音转写"),
+                ],
+            },
+            "行动学习-认知升级": {
+                "groups": [
+                    ("作业评价", 80.0, "文档"),
+                    ("呈现效果评价", 20.0, "录音转写"),
+                ],
+                "dimensions": [
+                    ("直面问题", 16.0, "文档"),
+                    ("创新构想", 12.0, "文档"),
+                    ("结构性方法", 12.0, "文档"),
+                    ("可操作性", 24.0, "文档"),
+                    ("表达清晰", 2.0, "录音转写"),
+                    ("回答问题", 1.0, "录音转写"),
+                    ("时间管理", 1.0, "录音转写"),
+                ],
+            },
+            "行动学习-组织协同": {
+                "groups": [
+                    ("作业评价", 80.0, "文档"),
+                    ("呈现效果评价", 20.0, "录音转写"),
+                ],
+                "dimensions": [
+                    ("直面问题", 16.0, "文档"),
+                    ("创新构想", 12.0, "文档"),
+                    ("结构性方法", 12.0, "文档"),
+                    ("可操作性", 24.0, "文档"),
+                    ("表达清晰", 2.0, "录音转写"),
+                    ("回答问题", 1.0, "录音转写"),
+                    ("时间管理", 1.0, "录音转写"),
+                ],
+            },
+            "行动学习-问题解决": {
                 "groups": [
                     ("作业评价", 80.0, "文档"),
                     ("呈现效果评价", 20.0, "录音转写"),
@@ -86,6 +136,30 @@ class DocumentAlignmentTestCase(unittest.TestCase):
             DISCLAIMER,
             "本报告由 AI 智能体自动生成，仅供参考，最终评定以培训导师意见为准。",
         )
+
+    def test_course_specific_action_learning_definitions_use_knowledge_base(self):
+        expected = {
+            "行动学习-认知升级": ("xl_course_1", "知识库和评分标准/1.md", "ASTRAL领导力模型"),
+            "行动学习-组织协同": ("xl_course_2", "知识库和评分标准/2.md", "七大协同障碍根源"),
+            "行动学习-问题解决": ("xl_course_3", "知识库和评分标准/3.md", "根源拆解三层模型"),
+        }
+
+        for report_type, (definition_id, rubric_path, marker) in expected.items():
+            with self.subTest(report_type=report_type):
+                definition = REPORT_DEFINITIONS[report_type]
+                self.assertEqual(definition["id"], definition_id)
+                self.assertEqual(definition["knowledge_base_path"], rubric_path)
+                rubric_text = (PROJECT_ROOT / rubric_path).read_text(encoding="utf-8")
+                self.assertIn(marker, rubric_text)
+
+                prompt = _build_user_prompt(
+                    report_type,
+                    definition,
+                    "这是一份用于测试的汇报材料，内容包含具体问题、解决方案、行动计划与评估反馈。" * 20,
+                    "",
+                )
+                self.assertIn(marker, prompt)
+                self.assertIn("课程专用评分标准", prompt)
 
 
 if __name__ == "__main__":

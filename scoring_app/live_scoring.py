@@ -2,7 +2,7 @@ import json
 import re
 
 from .llm_config import load_llm_settings
-from .rules import score_to_level
+from .rules import load_knowledge_base_text, score_to_level
 
 
 class LiveScoringError(Exception):
@@ -82,6 +82,8 @@ def _build_user_prompt(report_type, definition, document_text, transcript_text):
             )
         )
 
+    knowledge_base_text = load_knowledge_base_text(definition)
+    knowledge_base_section = knowledge_base_text or "未配置课程专用评分标准，请仅按维度清单和通用锚定规则评分。"
     transcript_section = transcript_text.strip() or "未提供"
     return """请对以下{report_type}材料进行逐维度评分。
 
@@ -105,9 +107,15 @@ def _build_user_prompt(report_type, definition, document_text, transcript_text):
    comment = ""
 4. 不要改动维度 id。
 5. score 取值范围 0.0-10.0，保留 1 位小数。
+6. 若存在课程专用评分标准，必须按其中的锚定区间、评分指引、常见误区和扣分规则判定分数。
+7. 输出结构以维度清单为准；课程专用评分标准用于解释每个维度应看哪些证据、何时加分或扣分。
 
 维度清单：
 {dimension_lines}
+
+---课程专用评分标准开始---
+{knowledge_base_section}
+---课程专用评分标准结束---
 
 ---文档内容开始---
 {document_text}
@@ -119,6 +127,7 @@ def _build_user_prompt(report_type, definition, document_text, transcript_text):
 """.format(
         report_type=report_type,
         dimension_lines="\n".join(dimension_lines),
+        knowledge_base_section=knowledge_base_section,
         document_text=document_text[:14000],
         transcript_text=transcript_section[:8000],
     )

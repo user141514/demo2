@@ -65,6 +65,7 @@ class RealSubmissionFlowTestCase(unittest.TestCase):
                     "name": "真实提交流程",
                     "org": "培训交付中心",
                     "report_type": self.report_type,
+                    "course_session": "第二次课 · 组织协同",
                     "date": "2026-05-25",
                     "note": "真实样例接口测试",
                     "transcript": "",
