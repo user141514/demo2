@@ -89,6 +89,7 @@ class AuthFlowTestCase(unittest.TestCase):
 
     def test_protected_endpoints_require_auth(self):
         self.assertEqual(self.client.post("/api/score").status_code, 401)
+        self.assertEqual(self.client.post("/api/score/stream").status_code, 401)
         self.assertEqual(self.client.get("/api/scores").status_code, 401)
         self.assertEqual(self.client.get("/api/scores/missing-id").status_code, 401)
         self.assertEqual(

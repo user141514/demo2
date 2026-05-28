@@ -1,6 +1,8 @@
+import json
 import os
 import shutil
 import tempfile
+import time
 import unittest
 from io import BytesIO
 from unittest.mock import patch
@@ -18,6 +20,7 @@ class ScorePipelineTestCase(unittest.TestCase):
             "SCORING_APP_DATA_DIR",
             "SCORING_APP_UPLOAD_DIR",
             "SCORING_APP_DB_PATH",
+            "SCORING_SCORE_STREAM_HEARTBEAT_SECONDS",
         ]
         self.env_backup = {key: os.environ.get(key) for key in self.env_keys}
         os.environ["SCORING_APP_DATA_DIR"] = self.data_dir
@@ -125,6 +128,56 @@ class ScorePipelineTestCase(unittest.TestCase):
         logout_response = self.client.post("/api/auth/logout")
         self.assertEqual(logout_response.status_code, 200)
         self.assertEqual(self.client.get("/api/scores").status_code, 401)
+
+    def test_streaming_score_submission_sends_heartbeat_and_result(self):
+        self._register_flow_user(email="stream@example.com", display_name="Stream User")
+        os.environ["SCORING_SCORE_STREAM_HEARTBEAT_SECONDS"] = "0.01"
+
+        def slow_score_submission(report_type, document_text, transcript_text, metadata):
+            time.sleep(0.04)
+            return self._build_score_result(score_id="pipeline-stream-001")
+
+        with patch(
+            "scoring_app.services.score_service.extract_text_from_pdf_bytes",
+            return_value=("This is a complete document body used to verify stream scoring. " * 8),
+        ), patch(
+            "scoring_app.services.score_service.score_submission",
+            side_effect=slow_score_submission,
+        ):
+            response = self.client.post(
+                "/api/score/stream",
+                data={
+                    "name": "Stream Student",
+                    "org": "Delivery Team",
+                    "report_type": self.report_type,
+                    "course_session": "\u7b2c\u4e8c\u6b21\u8bfe \u00b7 \u7ec4\u7ec7\u534f\u540c",
+                    "date": "2026-05-24",
+                    "note": "Streaming smoke test",
+                    "transcript": "Transcript for streaming score flow.",
+                    "pdf_file": (BytesIO(b"%PDF-1.4 test content"), "stream-report.pdf"),
+                },
+                content_type="multipart/form-data",
+                buffered=True,
+            )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertIn("application/x-ndjson", response.headers["Content-Type"])
+        events = [
+            json.loads(line)
+            for line in response.get_data(as_text=True).splitlines()
+            if line.strip()
+        ]
+        event_types = [event["type"] for event in events]
+        self.assertEqual(event_types[0], "status")
+        self.assertIn("heartbeat", event_types)
+        self.assertEqual(event_types[-1], "result")
+        self.assertEqual(events[-1]["result"]["score_id"], "pipeline-stream-001")
+
+        history_response = self.client.get("/api/scores")
+        self.assertEqual(history_response.status_code, 200)
+        history_items = history_response.get_json()["items"]
+        self.assertEqual(len(history_items), 1)
+        self.assertEqual(history_items[0]["score_id"], "pipeline-stream-001")
 
     def test_garbled_inline_transcript_falls_back_to_uploaded_file_text(self):
         self._register_flow_user(email="fallback@example.com", display_name="Fallback User")

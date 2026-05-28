@@ -14,7 +14,7 @@ DEFAULT_SETTINGS = {
     "openai_base_url": "https://api.deepseek.com",
     "openai_model": "deepseek-v4-pro",
     "llm_report_enabled": False,
-    "llm_report_timeout_seconds": 60,
+    "llm_report_timeout_seconds": 25,
 }
 
 
@@ -41,6 +41,7 @@ def _load_dotenv_config(path):
         "OPENAI_API_KEY": "openai_api_key",
         "OPENAI_BASE_URL": "openai_base_url",
         "OPENAI_MODEL": "openai_model",
+        "SCORING_LLM_REPORT_TIMEOUT_SECONDS": "llm_report_timeout_seconds",
     }
     config = {}
     for raw_line in path.read_text(encoding="utf-8-sig").splitlines():
@@ -69,6 +70,7 @@ def load_llm_settings():
         "openai_api_key": os.getenv("OPENAI_API_KEY"),
         "openai_base_url": os.getenv("OPENAI_BASE_URL"),
         "openai_model": os.getenv("OPENAI_MODEL"),
+        "llm_report_timeout_seconds": os.getenv("SCORING_LLM_REPORT_TIMEOUT_SECONDS"),
     }
     for key, value in env_overrides.items():
         if value:

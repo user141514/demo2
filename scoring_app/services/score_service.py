@@ -49,7 +49,14 @@ class ScoreSubmissionInput:
 
 def create_score(form, files, user_id):
     submission = _parse_submission(form, files)
+    return create_score_from_submission(submission, user_id)
 
+
+def prepare_score_submission(form, files):
+    return _parse_submission(form, files)
+
+
+def create_score_from_submission(submission, user_id):
     try:
         document_text = extract_text_from_pdf_bytes(submission.pdf_bytes)
     except PdfExtractionError as exc:

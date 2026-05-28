@@ -35,6 +35,7 @@ class LiveProviderFallbackTestCase(unittest.TestCase):
             "OPENAI_API_KEY",
             "OPENAI_BASE_URL",
             "OPENAI_MODEL",
+            "SCORING_LLM_REPORT_TIMEOUT_SECONDS",
         ]
         self.env_backup = {key: os.environ.get(key) for key in self.env_keys}
         os.environ["SCORING_APP_DATA_DIR"] = self.data_dir
@@ -72,7 +73,13 @@ class LiveProviderFallbackTestCase(unittest.TestCase):
         shutil.rmtree(self.temp_dir, ignore_errors=True)
 
     def test_default_live_provider_targets_deepseek_without_key(self):
-        for key in ("SCORING_LLM_MODE", "OPENAI_API_KEY", "OPENAI_BASE_URL", "OPENAI_MODEL"):
+        for key in (
+            "SCORING_LLM_MODE",
+            "OPENAI_API_KEY",
+            "OPENAI_BASE_URL",
+            "OPENAI_MODEL",
+            "SCORING_LLM_REPORT_TIMEOUT_SECONDS",
+        ):
             os.environ.pop(key, None)
 
         from scoring_app.llm_config import load_llm_settings
@@ -83,10 +90,17 @@ class LiveProviderFallbackTestCase(unittest.TestCase):
         self.assertEqual(settings["llm_mode"], "live")
         self.assertEqual(settings["openai_base_url"], "https://api.deepseek.com")
         self.assertEqual(settings["openai_model"], "deepseek-v4-pro")
+        self.assertEqual(settings["llm_report_timeout_seconds"], 25)
         self.assertFalse(settings["openai_api_key"])
 
     def test_dotenv_values_are_loaded_before_process_env_overrides(self):
-        for key in ("SCORING_LLM_MODE", "OPENAI_API_KEY", "OPENAI_BASE_URL", "OPENAI_MODEL"):
+        for key in (
+            "SCORING_LLM_MODE",
+            "OPENAI_API_KEY",
+            "OPENAI_BASE_URL",
+            "OPENAI_MODEL",
+            "SCORING_LLM_REPORT_TIMEOUT_SECONDS",
+        ):
             os.environ.pop(key, None)
 
         try:
@@ -97,11 +111,13 @@ class LiveProviderFallbackTestCase(unittest.TestCase):
                         "OPENAI_API_KEY=dotenv-key",
                         "OPENAI_BASE_URL=https://dotenv.example",
                         "OPENAI_MODEL=dotenv-model",
+                        "SCORING_LLM_REPORT_TIMEOUT_SECONDS=17",
                     ]
                 ),
                 encoding="utf-8",
             )
             os.environ["OPENAI_MODEL"] = "process-env-model"
+            os.environ["SCORING_LLM_REPORT_TIMEOUT_SECONDS"] = "11"
 
             from scoring_app.llm_config import load_llm_settings
 
@@ -112,6 +128,7 @@ class LiveProviderFallbackTestCase(unittest.TestCase):
             self.assertEqual(settings["openai_api_key"], "dotenv-key")
             self.assertEqual(settings["openai_base_url"], "https://dotenv.example")
             self.assertEqual(settings["openai_model"], "process-env-model")
+            self.assertEqual(settings["llm_report_timeout_seconds"], 11)
         finally:
             self.dotenv_path.unlink(missing_ok=True)
 

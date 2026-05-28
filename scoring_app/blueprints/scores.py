@@ -1,4 +1,8 @@
-from flask import Blueprint, request
+import json
+import os
+from concurrent.futures import ThreadPoolExecutor, TimeoutError
+
+from flask import Blueprint, Response, current_app, request, stream_with_context
 
 from ..core import current_user_id, json_error, json_response, require_auth, send_download
 from ..utils import now_iso
@@ -6,10 +10,12 @@ from ..core.errors import ApplicationError
 from ..services.score_service import (
     build_score_export,
     create_score,
+    create_score_from_submission,
     delete_user_score,
     get_user_score,
     list_user_scores,
     list_user_scores_paginated,
+    prepare_score_submission,
     update_user_score,
 )
 
@@ -25,6 +31,85 @@ def create_score_route():
     except ApplicationError as exc:
         return json_error(exc.code, exc.message, exc.status_code)
     return json_response(result)
+
+
+@scores_bp.route("/score/stream", methods=["POST"])
+@require_auth
+def create_score_stream_route():
+    try:
+        submission = prepare_score_submission(request.form, request.files)
+    except ApplicationError as exc:
+        return json_error(exc.code, exc.message, exc.status_code)
+
+    user_id = current_user_id()
+    headers = {
+        "Cache-Control": "no-cache",
+        "X-Accel-Buffering": "no",
+    }
+    return Response(
+        stream_with_context(_stream_score_submission(submission, user_id)),
+        headers=headers,
+        mimetype="application/x-ndjson",
+    )
+
+
+def _stream_score_submission(submission, user_id):
+    yield _stream_event(
+        "status",
+        message="评分材料已接收，正在生成结果。",
+        progress=8,
+    )
+
+    interval = _stream_heartbeat_seconds()
+    with ThreadPoolExecutor(max_workers=1) as executor:
+        future = executor.submit(create_score_from_submission, submission, user_id)
+        heartbeat_count = 0
+        while True:
+            try:
+                result = future.result(timeout=interval)
+            except TimeoutError:
+                heartbeat_count += 1
+                yield _stream_event(
+                    "heartbeat",
+                    message="评分仍在进行，请保持当前页面。",
+                    progress=min(92, 12 + heartbeat_count * 6),
+                    elapsed_seconds=round(heartbeat_count * interval, 1),
+                )
+                continue
+            except ApplicationError as exc:
+                yield _stream_event(
+                    "error",
+                    code=exc.code,
+                    message=exc.message,
+                    status=exc.status_code,
+                    progress=100,
+                )
+                break
+            except Exception:
+                current_app.logger.exception("Streaming score submission failed.")
+                yield _stream_event(
+                    "error",
+                    code="score_stream_failed",
+                    message="评分生成失败，请稍后重试。",
+                    status=500,
+                    progress=100,
+                )
+                break
+
+            yield _stream_event("result", result=result, progress=100)
+            break
+
+
+def _stream_event(event_type, **payload):
+    payload = {"type": event_type, **payload}
+    return json.dumps(payload, ensure_ascii=False, separators=(",", ":")) + "\n"
+
+
+def _stream_heartbeat_seconds():
+    try:
+        return max(0.01, float(os.getenv("SCORING_SCORE_STREAM_HEARTBEAT_SECONDS", "8")))
+    except Exception:
+        return 8.0
 
 
 @scores_bp.route("/scores", methods=["GET"])

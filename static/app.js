@@ -7,6 +7,7 @@ const API = {
   authResetPassword: "/api/auth/reset-password",
   reportTypes: "/api/report-types",
   score: "/api/score",
+  scoreStream: "/api/score/stream",
   scores: "/api/scores",
   scoreDetail: (id) => `/api/scores/${encodeURIComponent(id)}`,
   exportMd: (id) => `/api/scores/${encodeURIComponent(id)}/export?format=md`,
@@ -656,17 +657,7 @@ async function submitScore() {
   clearAppNotice();
 
   try {
-    const response = await fetch(API.score, {
-      method: "POST",
-      credentials: "same-origin",
-      body: formData,
-      headers: { Accept: "application/json" },
-    });
-    const payload = await safeJson(response);
-    if (!response.ok) {
-      throw createHttpError(response.status, payload);
-    }
-
+    const payload = await submitScoreWithProgress(formData);
     const score = normalizeScore(payload, formState);
     state.currentScore = score;
     state.currentHistoryItem = null;
@@ -679,11 +670,187 @@ async function submitScore() {
       handleAuthFailure();
       return;
     }
+    const recovered = await recoverLatestSubmittedScore(error, formState);
+    if (recovered) {
+      return;
+    }
     showAppNotice(error.message || "提交评分失败，请稍后重试。", "error");
   } finally {
     hideLoading();
     disableScoreForm(false);
   }
+}
+
+async function submitScoreWithProgress(formData) {
+  const response = await fetch(API.scoreStream, {
+    method: "POST",
+    credentials: "same-origin",
+    body: formData,
+    headers: { Accept: "application/x-ndjson, application/json" },
+  });
+
+  if (!response.ok) {
+    const payload = await safeJson(response);
+    if (response.status === 404 || response.status === 405) {
+      return submitScoreJson(formData);
+    }
+    throw createHttpError(response.status, payload);
+  }
+
+  if (
+    !response.body ||
+    typeof response.body.getReader !== "function" ||
+    typeof TextDecoder !== "function"
+  ) {
+    const text = await response.text();
+    return parseCompletedScoreStream(text);
+  }
+
+  const reader = response.body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = "";
+  let finalResult = null;
+
+  while (true) {
+    const { value, done } = await reader.read();
+    if (done) {
+      break;
+    }
+    buffer += decoder.decode(value, { stream: true });
+    const lines = buffer.split(/\r?\n/);
+    buffer = lines.pop() || "";
+    for (const line of lines) {
+      const result = handleScoreStreamLine(line);
+      if (result) {
+        finalResult = result;
+      }
+    }
+  }
+
+  buffer += decoder.decode();
+  if (buffer.trim()) {
+    const result = handleScoreStreamLine(buffer);
+    if (result) {
+      finalResult = result;
+    }
+  }
+
+  if (!finalResult) {
+    throw new Error("评分连接已结束，但未收到完整结果。");
+  }
+  return finalResult;
+}
+
+async function submitScoreJson(formData) {
+  const response = await fetch(API.score, {
+    method: "POST",
+    credentials: "same-origin",
+    body: formData,
+    headers: { Accept: "application/json" },
+  });
+  const payload = await safeJson(response);
+  if (!response.ok) {
+    throw createHttpError(response.status, payload);
+  }
+  return payload;
+}
+
+function parseCompletedScoreStream(text) {
+  let finalResult = null;
+  String(text || "")
+    .split(/\r?\n/)
+    .forEach((line) => {
+      const result = handleScoreStreamLine(line);
+      if (result) {
+        finalResult = result;
+      }
+    });
+  if (!finalResult) {
+    throw new Error("评分连接已结束，但未收到完整结果。");
+  }
+  return finalResult;
+}
+
+function handleScoreStreamLine(line) {
+  const text = String(line || "").trim();
+  if (!text) {
+    return null;
+  }
+  let event;
+  try {
+    event = JSON.parse(text);
+  } catch {
+    return null;
+  }
+  if (event.type === "status" || event.type === "heartbeat") {
+    updateLoadingStatus(event.message || "正在等待评分结果", event.progress);
+    return null;
+  }
+  if (event.type === "error") {
+    throw createHttpError(event.status || 500, event);
+  }
+  if (event.type === "result") {
+    updateLoadingStatus("评分结果已生成，正在整理页面", 100);
+    return event.result || null;
+  }
+  return null;
+}
+
+async function recoverLatestSubmittedScore(error, formState) {
+  if (!shouldRecoverSubmittedScore(error)) {
+    return false;
+  }
+
+  try {
+    updateLoadingStatus(
+      "\u63d0\u4ea4\u54cd\u5e94\u4e2d\u65ad\uff0c\u6b63\u5728\u4ece\u5386\u53f2\u8bb0\u5f55\u6062\u590d\u7ed3\u679c",
+      96
+    );
+    const history = await loadHistory({ force: true, silent: true });
+    const item = findSubmittedHistoryItem(history, formState);
+    if (!item || !item.id) {
+      return false;
+    }
+
+    const payload = await requestJson(API.scoreDetail(item.id), { method: "GET" });
+    const score = normalizeScore(payload, formState);
+    state.currentScore = score;
+    state.currentHistoryItem = { id: item.id };
+    renderResult(score, { fromHistory: true });
+    showPage("result");
+    showAppNotice(
+      "\u8bc4\u5206\u8bf7\u6c42\u7684\u8fde\u63a5\u4e2d\u65ad\uff0c\u4f46\u7cfb\u7edf\u5df2\u4ece\u5386\u53f2\u8bb0\u5f55\u6062\u590d\u4e86\u6700\u65b0\u7ed3\u679c\u3002",
+      "info"
+    );
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function shouldRecoverSubmittedScore(error) {
+  if (!error || !error.status) {
+    return true;
+  }
+  return [408, 502, 503, 504].includes(error.status);
+}
+
+function findSubmittedHistoryItem(history, formState) {
+  const items = Array.isArray(history) ? history : [];
+  return (
+    items.find(
+      (item) =>
+        sameSubmittedValue(item.name, formState.name) &&
+        sameSubmittedValue(item.org, formState.org) &&
+        sameSubmittedValue(item.reportType, formState.reportType) &&
+        sameSubmittedValue(item.courseSession, formState.courseSession) &&
+        sameSubmittedValue(item.date, formState.date)
+    ) || null
+  );
+}
+
+function sameSubmittedValue(left, right) {
+  return String(left || "").trim() === String(right || "").trim();
 }
 
 function readForm() {
@@ -826,6 +993,17 @@ function showLoading(text, progress) {
     els.loadingProgress.style.width = `${step[1]}%`;
     index += 1;
   }, 700);
+}
+
+function updateLoadingStatus(text, progress) {
+  clearInterval(state.loadingTimer);
+  state.loadingTimer = null;
+  els.loadingSubtitle.textContent = text;
+  const numericProgress = Number(progress);
+  if (Number.isFinite(numericProgress)) {
+    const boundedProgress = Math.max(0, Math.min(100, numericProgress));
+    els.loadingProgress.style.width = `${boundedProgress}%`;
+  }
 }
 
 function hideLoading() {
