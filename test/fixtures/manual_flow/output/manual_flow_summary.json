@@ -1,0 +1,62 @@
+{
+  "history_count": 3,
+  "summary": [
+    {
+      "slug": "01_cognitive_upgrade",
+      "score_id": "096d62efe6404afc8ec4f437c3390df1",
+      "report_type": "行动学习-认知升级",
+      "course_session": "第一次课 · 管理认知",
+      "total_score": 76.2,
+      "total_level": "优秀",
+      "doc_average": 7.8,
+      "audio_average": 5.0,
+      "lowest_dimension": {
+        "name": "表达清晰",
+        "score": 4.2
+      },
+      "exports": {
+        "json": "test\\fixtures\\manual_flow\\output\\01_cognitive_upgrade_result.json",
+        "markdown": "test\\fixtures\\manual_flow\\output\\01_cognitive_upgrade_report.md",
+        "pdf": "test\\fixtures\\manual_flow\\output\\01_cognitive_upgrade_report.pdf"
+      }
+    },
+    {
+      "slug": "02_org_collaboration",
+      "score_id": "c12154e8c44b47cabbeecaf3ab35f679",
+      "report_type": "行动学习-组织协同",
+      "course_session": "第二次课 · 组织协同",
+      "total_score": 72.5,
+      "total_level": "良好",
+      "doc_average": 7.5,
+      "audio_average": 5.4,
+      "lowest_dimension": {
+        "name": "表达清晰",
+        "score": 4.7
+      },
+      "exports": {
+        "json": "test\\fixtures\\manual_flow\\output\\02_org_collaboration_result.json",
+        "markdown": "test\\fixtures\\manual_flow\\output\\02_org_collaboration_report.md",
+        "pdf": "test\\fixtures\\manual_flow\\output\\02_org_collaboration_report.pdf"
+      }
+    },
+    {
+      "slug": "03_problem_solving",
+      "score_id": "3d634217fd4a47e78f65cfad13baea68",
+      "report_type": "行动学习-问题解决",
+      "course_session": "第三次课 · 问题解决",
+      "total_score": 60.7,
+      "total_level": "良好",
+      "doc_average": 6.2,
+      "audio_average": 4.7,
+      "lowest_dimension": {
+        "name": "表达清晰",
+        "score": 3.8
+      },
+      "exports": {
+        "json": "test\\fixtures\\manual_flow\\output\\03_problem_solving_result.json",
+        "markdown": "test\\fixtures\\manual_flow\\output\\03_problem_solving_report.md",
+        "pdf": "test\\fixtures\\manual_flow\\output\\03_problem_solving_report.pdf"
+      }
+    }
+  ]
+}
