@@ -17,10 +17,16 @@ def read_json_body():
     return request.get_json(silent=True) or {}
 
 
-def send_download(content, filename, mimetype):
+def send_download(content_or_path, filename, mimetype):
     kwargs = {"mimetype": mimetype, "as_attachment": True}
-    payload = BytesIO(content) if isinstance(content, (bytes, bytearray)) else content
+    if isinstance(content_or_path, (bytes, bytearray)):
+        payload = BytesIO(content_or_path)
+        try:
+            return send_file(payload, download_name=filename, **kwargs)
+        except TypeError:
+            return send_file(payload, attachment_filename=filename, **kwargs)
+
     try:
-        return send_file(payload, download_name=filename, **kwargs)
+        return send_file(str(content_or_path), download_name=filename, **kwargs)
     except TypeError:
-        return send_file(payload, attachment_filename=filename, **kwargs)
+        return send_file(str(content_or_path), attachment_filename=filename, **kwargs)

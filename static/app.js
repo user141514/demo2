@@ -78,6 +78,7 @@ function cacheElements() {
     "field-name",
     "field-org",
     "field-report-type",
+    "field-course-session",
     "field-date",
     "field-note",
     "field-pdf",
@@ -552,6 +553,7 @@ async function submitScore() {
   formData.append("name", formState.name);
   formData.append("org", formState.org);
   formData.append("report_type", formState.reportType);
+  formData.append("course_session", formState.courseSession);
   formData.append("date", formState.date);
   formData.append("note", formState.note || "");
   formData.append("transcript", formState.transcript || "");
@@ -600,6 +602,7 @@ function readForm() {
     name: els.fieldName.value.trim(),
     org: els.fieldOrg.value.trim(),
     reportType: els.fieldReportType.value.trim(),
+    courseSession: els.fieldCourseSession.value.trim(),
     date: els.fieldDate.value,
     note: els.fieldNote.value.trim(),
     transcript: els.fieldTranscript.value.trim(),
@@ -616,6 +619,7 @@ function validateForm(formState) {
   if (!formState.name) errors.push("请输入姓名。");
   if (!formState.org) errors.push("请输入所属组织 / 部门。");
   if (!formState.reportType) errors.push("请选择汇报类型。");
+  if (!formState.courseSession) errors.push("请选择对应课次。");
   if (!formState.date) errors.push("请选择评分日期。");
   if (!formState.pdfFile) errors.push("请上传 PDF 文件。");
   return errors;
@@ -626,6 +630,7 @@ function disableScoreForm(disabled) {
     els.fieldName,
     els.fieldOrg,
     els.fieldReportType,
+    els.fieldCourseSession,
     els.fieldDate,
     els.fieldNote,
     els.fieldPdf,
@@ -809,12 +814,11 @@ function renderHistory(list) {
         <tr>
           <td>
             <div class="strong">${escapeHtml(item.name || "--")}</div>
-            <div class="muted">${escapeHtml(item.id || "")}</div>
           </td>
           <td>${escapeHtml(item.org || "--")}</td>
           <td><span class="tag">${escapeHtml(item.reportType || "--")}</span></td>
+          <td>${escapeHtml(item.courseSession || "--")}</td>
           <td><strong>${formatScore(item.totalScore)}</strong></td>
-          <td>${item.manualAvg == null ? "待接入" : formatScore(item.manualAvg)}</td>
           <td>${escapeHtml(item.date || "--")}</td>
           <td>
             <div class="history-action">
@@ -981,7 +985,7 @@ function renderResult(score, options = {}) {
     els.breadcrumbDate.textContent = score.date || "";
   }
 
-  els.resultMeta.textContent = [score.date, score.reportType || score.type]
+  els.resultMeta.textContent = [score.date, score.reportType || score.type, score.courseSession]
     .filter(Boolean)
     .join(" · ") || "--";
   els.resultPerson.textContent = [score.name, score.org].filter(Boolean).join(" · ") || "--";
@@ -1155,6 +1159,8 @@ function normalizeScore(payload, fallbackMeta) {
       payload.final_score
   );
   const reportType = payload.report_type ?? payload.type ?? fallbackMeta.reportType ?? "";
+  const courseSession =
+    payload.course_session ?? payload.courseSession ?? fallbackMeta.courseSession ?? "";
   const name = payload.name ?? payload.person_name ?? fallbackMeta.name ?? "";
   const org = payload.org ?? payload.department ?? fallbackMeta.org ?? "";
   const date = payload.date ?? fallbackMeta.date ?? "";
@@ -1170,6 +1176,7 @@ function normalizeScore(payload, fallbackMeta) {
     org,
     reportType,
     type: reportType,
+    courseSession,
     date,
     totalScore: totalScore == null ? summary.totalScore : totalScore,
     level: payload.total_level ?? payload.level ?? payload.grade ?? "",
@@ -1290,6 +1297,7 @@ function normalizeHistoryItem(item, index) {
     name: item.name ?? item.person_name ?? item.subject_name ?? "--",
     org: item.org ?? item.department ?? item.organization ?? "--",
     reportType: item.report_type ?? item.type ?? item.reportType ?? "--",
+    courseSession: item.course_session ?? item.courseSession ?? "--",
     totalScore: numberOrNull(item.total_score ?? item.totalScore ?? item.ai_score ?? item.score),
     manualAvg: numberOrNull(
       item.manual_score ??

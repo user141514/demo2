@@ -129,6 +129,7 @@ def _assemble_result(report_type, metadata, transcript_present, dimension_result
         "name": metadata["name"],
         "org": metadata["org"],
         "report_type": report_type,
+        "course_session": metadata.get("course_session", ""),
         "date": metadata["date"],
         "note": metadata.get("note", ""),
         "pdf_filename": metadata.get("pdf_filename", ""),

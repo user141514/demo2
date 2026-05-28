@@ -1,4 +1,5 @@
 import unittest
+from unittest.mock import MagicMock, patch
 
 from scoring_app.pdf_extract import PdfExtractionError, extract_text_from_pdf_bytes
 
@@ -6,6 +7,18 @@ from test.fixture_builder import build_sample_document_text, build_text_pdf_byte
 
 
 class PdfExtractionQualityTestCase(unittest.TestCase):
+    def test_uses_pypdf_reader_before_legacy_extractor(self):
+        page = MagicMock()
+        page.extract_text.return_value = build_sample_document_text()
+        reader = MagicMock()
+        reader.pages = [page]
+
+        with patch("scoring_app.pdf_extract.PdfReader", return_value=reader) as pdf_reader:
+            extracted = extract_text_from_pdf_bytes(b"%PDF-1.4\nmock")
+
+        pdf_reader.assert_called_once()
+        self.assertIn("温故知新个人汇报样例材料", extracted)
+
     def test_valid_text_pdf_can_be_extracted(self):
         pdf_bytes = build_text_pdf_bytes(build_sample_document_text())
         extracted = extract_text_from_pdf_bytes(pdf_bytes)
@@ -19,6 +32,13 @@ class PdfExtractionQualityTestCase(unittest.TestCase):
 
         with self.assertRaises(PdfExtractionError):
             extract_text_from_pdf_bytes(pdf_bytes)
+
+    def test_pypdf_failure_does_not_fall_back_to_legacy_extractor(self):
+        pdf_bytes = build_text_pdf_bytes(build_sample_document_text())
+
+        with patch("scoring_app.pdf_extract.PdfReader", side_effect=RuntimeError("boom")):
+            with self.assertRaises(PdfExtractionError):
+                extract_text_from_pdf_bytes(pdf_bytes)
 
 
 if __name__ == "__main__":

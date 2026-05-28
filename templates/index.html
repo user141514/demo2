@@ -192,6 +192,19 @@
                   <input type="date" name="date" id="field-date">
                 </label>
                 <label class="field full">
+                  <span>对应课次 <em>*</em></span>
+                  <select name="course_session" id="field-course-session" required>
+                    <option value="">请选择课次</option>
+                    <option value="第一次课 · 管理认知">第一次课 · 管理认知</option>
+                    <option value="第二次课 · 组织协同">第二次课 · 组织协同</option>
+                    <option value="第三次课 · 问题解决">第三次课 · 问题解决</option>
+                    <option value="第四次课">第四次课</option>
+                    <option value="第五次课">第五次课</option>
+                    <option value="第六次课">第六次课</option>
+                    <option value="中期回顾工作坊">中期回顾工作坊</option>
+                  </select>
+                </label>
+                <label class="field full">
                   <span>备注</span>
                   <textarea name="note" id="field-note" rows="4" placeholder="可填写补充说明、人工校对建议或特殊情况说明"></textarea>
                 </label>
@@ -255,12 +268,12 @@
           <div class="result-hero-main">
             <div class="eyebrow light"></div>
             <div class="result-meta" id="result-meta">--</div>
-            <h1 id="result-title">评分结果</h1>
+            <h1 id="result-title">总体评价</h1>
             <div class="result-person" id="result-person">--</div>
             <p class="result-overview" id="result-overview">提交后将在这里显示总评摘要。</p>
           </div>
           <div class="result-score-card">
-            <div class="score-label">总分</div>
+            <div class="score-label">分数/100</div>
             <div class="score-value" id="result-total-score">--</div>
             <div class="score-level" id="result-level">--</div>
             <div class="score-note" id="result-created-at"></div>
@@ -286,8 +299,8 @@
           </div>
         </div>
 
-        <div class="grid result-grid">
-          <section class="panel">
+        <div class="result-sections">
+          <section class="panel result-dimensions-panel">
             <div class="panel-head">
               <div>
                 <h2>一级维度明细</h2>
@@ -297,24 +310,24 @@
             <div class="panel-body" id="result-dimensions"></div>
           </section>
 
-          <aside class="panel result-side">
+          <section class="panel result-conclusions">
             <div class="panel-head">
               <div>
                 <h2>结论与建议</h2>
                 <p>用于页面展示与 Markdown / PDF 导出。</p>
               </div>
             </div>
-            <div class="panel-body stack">
-              <div>
-                <div class="side-title">总评</div>
-                <div class="side-copy" id="result-comment">--</div>
+            <div class="panel-body conclusion-layout">
+              <div class="conclusion-card conclusion-summary">
+                <h3>总评</h3>
+                <p id="result-comment">--</p>
               </div>
-              <div>
-                <div class="side-title">优势亮点</div>
+              <div class="conclusion-card conclusion-strengths">
+                <h3>优势与亮点</h3>
                 <ul class="bullet-list" id="result-strengths"></ul>
               </div>
-              <div>
-                <div class="side-title">改进建议</div>
+              <div class="conclusion-card conclusion-improvements">
+                <h3>改进方向</h3>
                 <ul class="bullet-list" id="result-improvements"></ul>
               </div>
               <div class="disclaimer">
@@ -322,7 +335,7 @@
                 <p id="result-disclaimer">本报告由系统自动生成，仅供参考，最终结论以人工审核为准。</p>
               </div>
             </div>
-          </aside>
+          </section>
         </div>
 
         <div class="export-bar panel">
@@ -343,7 +356,6 @@
         <div class="page-head">
           <div class="eyebrow"></div>
           <h1 id="history-title">评分历史</h1>
-          <p>历史列表优先调用 `GET /api/scores`，点击任意记录可回看详情并导出。</p>
         </div>
 
         <div class="history-toolbar">
@@ -369,7 +381,6 @@
           <div class="panel-head">
             <div>
               <h2>评分列表</h2>
-              <p>表格展示支持查看报告与历史回看。</p>
             </div>
             <button class="btn btn-ghost btn-sm" type="button" id="history-reload">重新加载</button>
           </div>
@@ -381,8 +392,8 @@
                     <th>被评分人</th>
                     <th>所属组织</th>
                     <th>汇报类型</th>
+                    <th>对应课次</th>
                     <th>AI 总分</th>
-                    <th>人工均分（待接入）</th>
                     <th>评分日期</th>
                     <th>操作</th>
                   </tr>
