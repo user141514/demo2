@@ -2,6 +2,7 @@ import os
 import shutil
 import tempfile
 import unittest
+from pathlib import Path
 
 from scoring_app import create_app
 
@@ -37,6 +38,12 @@ class AppShellTestCase(unittest.TestCase):
         index_response = self.client.get("/")
         self.assertEqual(index_response.status_code, 200)
         index_html = index_response.get_data(as_text=True)
+        self.assertIn("\u667a\u80fd\u4f53\u8bc4\u5206\u7cfb\u7edf", index_html)
+        self.assertIn("AI SCORING \u00b7 \u7f8e\u592a\u54a8\u8be2", index_html)
+        self.assertIn("\u8ba9\u6bcf\u4e00\u4efd\u6c47\u62a5\u90fd\u5f97\u5230\u4e13\u4e1a\u8bc4\u4ef7", index_html)
+        self.assertIn("\u4e2d\u96c6\u8f66\u8f86 MBA \u4eba\u624d\u6c60\u57f9\u8bad\u9879\u76ee", index_html)
+        self.assertNotIn("Cookie Session", index_html)
+        self.assertNotIn("\u767b\u5f55\u6001\u53d7\u540c\u6e90 Cookie \u4fdd\u62a4", index_html)
         self.assertIn("对应课次", index_html)
         self.assertIn("name=\"course_session\"", index_html)
         self.assertIn("required", index_html)
@@ -47,11 +54,20 @@ class AppShellTestCase(unittest.TestCase):
         self.assertIn("<h1 id=\"result-title\">总体评价</h1>", index_html)
         self.assertIn("<div class=\"score-label\">分数/100</div>", index_html)
         self.assertLess(index_html.index("一级维度明细"), index_html.index("结论与建议"))
-        self.assertIn("conclusion-card conclusion-summary", index_html)
+        self.assertNotIn("conclusion-card conclusion-summary", index_html)
+        self.assertNotIn("id=\"result-comment\"", index_html)
         self.assertIn("conclusion-card conclusion-strengths", index_html)
         self.assertIn("conclusion-card conclusion-improvements", index_html)
         self.assertIn("<th>对应课次</th>", index_html)
         self.assertNotIn("<th>人工均分（待接入）</th>", index_html)
+
+        app_js = (Path(__file__).resolve().parents[1] / "static" / "app.js").read_text(
+            encoding="utf-8"
+        )
+        self.assertIn("PUBLIC_REPORT_TYPE_KEYS", app_js)
+        self.assertIn('key: "\u6e29\u6545\u77e5\u65b0"', app_js)
+        self.assertIn('key: "\u884c\u52a8\u5b66\u4e60"', app_js)
+        self.assertNotIn('key: "\u884c\u52a8\u5b66\u4e60-\u7ec4\u7ec7\u534f\u540c"', app_js)
 
         health_response = self.client.get("/api/health")
         self.assertEqual(health_response.status_code, 200)

@@ -30,7 +30,7 @@ def live_score_submission(report_type, definition, document_text, transcript_tex
     prompt = _build_user_prompt(report_type, definition, document_text, transcript_text)
     response = client.chat.completions.create(
         model=settings["openai_model"],
-        temperature=0.2,
+        temperature=0.0,
         messages=[
             {"role": "system", "content": _build_system_prompt()},
             {"role": "user", "content": prompt},

@@ -129,6 +129,84 @@ class ScorePipelineTestCase(unittest.TestCase):
         self.assertEqual(logout_response.status_code, 200)
         self.assertEqual(self.client.get("/api/scores").status_code, 401)
 
+    def test_generic_action_learning_uses_course_rubric_and_keeps_public_type(self):
+        self._register_flow_user(email="course-map@example.com", display_name="Course Map")
+        captured = {}
+
+        def fake_score_submission(report_type, document_text, transcript_text, metadata):
+            captured["report_type"] = report_type
+            result = self._build_score_result(score_id="pipeline-score-course-map")
+            result["report_type"] = report_type
+            return result
+
+        with patch(
+            "scoring_app.services.score_service.extract_text_from_pdf_bytes",
+            return_value=("This is a complete document body used to verify course mapping. " * 8),
+        ), patch(
+            "scoring_app.services.score_service.score_submission",
+            side_effect=fake_score_submission,
+        ):
+            response = self.client.post(
+                "/api/score",
+                data={
+                    "name": "Course Map Student",
+                    "org": "Delivery Team",
+                    "report_type": "\u884c\u52a8\u5b66\u4e60",
+                    "course_session": "\u7b2c\u4e8c\u6b21\u8bfe \u00b7 \u7ec4\u7ec7\u534f\u540c",
+                    "date": "2026-05-28",
+                    "note": "Course mapping",
+                    "transcript": "Transcript for course mapping.",
+                    "pdf_file": (BytesIO(b"%PDF-1.4 test content"), "report.pdf"),
+                },
+                content_type="multipart/form-data",
+            )
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.get_json()
+        self.assertEqual(captured["report_type"], "\u884c\u52a8\u5b66\u4e60-\u7ec4\u7ec7\u534f\u540c")
+        self.assertEqual(payload["report_type"], "\u884c\u52a8\u5b66\u4e60")
+
+        history_response = self.client.get("/api/scores")
+        self.assertEqual(history_response.status_code, 200)
+        history_items = history_response.get_json()["items"]
+        self.assertEqual(history_items[0]["report_type"], "\u884c\u52a8\u5b66\u4e60")
+
+    def test_heuristic_takeaways_are_single_overall_sentences(self):
+        from scoring_app.scoring import score_submission
+
+        document_text = (
+            "This report explains the problem, root cause, structure, plan, action, "
+            "result, metrics, reflection, innovation, collaboration, and next steps. "
+            * 12
+        )
+        transcript_text = (
+            "The presentation is clear, structured, responsive to questions, and keeps time. "
+            * 8
+        )
+
+        with patch("scoring_app.scoring.live_score_submission", side_effect=RuntimeError("mock")):
+            payload = score_submission(
+                self.report_type,
+                document_text,
+                transcript_text,
+                {
+                    "name": "Takeaway Student",
+                    "org": "Delivery Team",
+                    "date": "2026-05-28",
+                    "course_session": "\u7b2c\u4e8c\u6b21\u8bfe \u00b7 \u7ec4\u7ec7\u534f\u540c",
+                    "note": "",
+                    "pdf_filename": "report.pdf",
+                    "upload_path": "",
+                    "document_preview": document_text[:800],
+                },
+            )
+
+        self.assertEqual(len(payload["strengths"]), 1)
+        self.assertEqual(len(payload["improvements"]), 1)
+        for dimension in self.report_definition["dimensions"]:
+            self.assertNotIn(dimension["name"], payload["strengths"][0])
+            self.assertNotIn(dimension["name"], payload["improvements"][0])
+
     def test_streaming_score_submission_sends_heartbeat_and_result(self):
         self._register_flow_user(email="stream@example.com", display_name="Stream User")
         os.environ["SCORING_SCORE_STREAM_HEARTBEAT_SECONDS"] = "0.01"

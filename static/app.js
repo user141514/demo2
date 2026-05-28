@@ -19,28 +19,9 @@ const AUTH_MODES = ["login", "register", "forgot", "reset"];
 const DEFAULT_REPORT_TYPES = [
   { key: "温故知新", name: "温故知新", description: "个人汇报 · 10个子维度" },
   { key: "行动学习", name: "行动学习", description: "作业汇报 · 7个子维度" },
-  {
-    key: "行动学习-认知升级",
-    name: "行动学习-认知升级",
-    description: "第一次课程《趋势变局下MBA管理者的认知升级》专用",
-  },
-  {
-    key: "行动学习-组织协同",
-    name: "行动学习-组织协同",
-    description: "第二次课程《组织协同》专用",
-  },
-  {
-    key: "行动学习-问题解决",
-    name: "行动学习-问题解决",
-    description: "第三次课程《问题解决能力提升》专用",
-  },
 ];
 
-const REPORT_TYPE_COURSE_SESSION = {
-  "行动学习-认知升级": "第一次课 · 管理认知",
-  "行动学习-组织协同": "第二次课 · 组织协同",
-  "行动学习-问题解决": "第三次课 · 问题解决",
-};
+const PUBLIC_REPORT_TYPE_KEYS = new Set(DEFAULT_REPORT_TYPES.map((item) => item.key));
 
 const state = {
   authed: false,
@@ -196,7 +177,6 @@ function bindEvents() {
     event.preventDefault();
     submitScore();
   });
-  els.fieldReportType.addEventListener("change", syncCourseSessionForReportType);
   els.submitScore.addEventListener("click", submitScore);
   els.resetForm.addEventListener("click", resetScoreForm);
   els.exportPdf.addEventListener("click", exportPdf);
@@ -253,7 +233,7 @@ function renderReportTypeOptions(items) {
   els.fieldReportType.innerHTML = [
     '<option value="">请选择</option>',
     ...reportTypes.map((item) => {
-      const label = item.description ? `${item.name}｜${item.description}` : item.name;
+      const label = item.description ? `${item.name} | ${item.description}` : item.name;
       return `<option value="${escapeAttr(item.key)}">${escapeHtml(label)}</option>`;
     }),
   ].join("");
@@ -262,18 +242,6 @@ function renderReportTypeOptions(items) {
     els.fieldReportType.value = currentValue;
   }
   state.reportTypes = reportTypes;
-  syncCourseSessionForReportType();
-}
-
-function syncCourseSessionForReportType() {
-  if (!els.fieldReportType || !els.fieldCourseSession) {
-    return;
-  }
-  const preferredSession = REPORT_TYPE_COURSE_SESSION[els.fieldReportType.value];
-  if (!preferredSession) {
-    return;
-  }
-  els.fieldCourseSession.value = preferredSession;
 }
 
 function normalizeReportTypes(items) {
@@ -286,7 +254,7 @@ function normalizeReportTypes(items) {
       name: String(item.name || item.key || "").trim(),
       description: String(item.description || "").trim(),
     }))
-    .filter((item) => item.key && item.name);
+    .filter((item) => item.key && item.name && PUBLIC_REPORT_TYPE_KEYS.has(item.key));
 }
 
 function enterGuestApp(options = {}) {
@@ -1273,21 +1241,25 @@ function renderResult(score, options = {}) {
     ? `${score.lowestDimension.name || "--"} · ${formatScore(score.lowestDimension.score)}`
     : "--";
   els.resultSource.textContent = score.audioMissing ? "无录音" : "文档 + 录音";
-  els.resultComment.textContent =
-    score.overall_comment || score.overall || score.overview || "--";
+  if (els.resultComment) {
+    els.resultComment.textContent =
+      score.overall_comment || score.overall || score.overview || "--";
+  }
   els.resultDisclaimer.textContent =
     score.disclaimer || "本报告由系统自动生成，仅供参考，最终结论以人工审核为准。";
   els.exportPerson.textContent = score.name || "--";
 
-  renderArrayList(els.resultStrengths, score.strengths || []);
-  renderArrayList(els.resultImprovements, score.improvements || []);
+  renderConclusionText(els.resultStrengths, score.strengths || []);
+  renderConclusionText(els.resultImprovements, score.improvements || []);
   renderDimensions(score.dimensions || []);
 }
 
-function renderArrayList(container, items) {
-  container.innerHTML = items.length
-    ? items.map((item) => `<li>${escapeHtml(String(item))}</li>`).join("")
-    : "<li>--</li>";
+function renderConclusionText(container, items) {
+  if (!container) {
+    return;
+  }
+  const values = Array.isArray(items) ? items.filter(Boolean).map(String) : [];
+  container.textContent = values.length ? values.join(" ") : "--";
 }
 
 function renderDimensions(dimensions) {

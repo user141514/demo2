@@ -3,8 +3,8 @@
   "summary": [
     {
       "slug": "01_cognitive_upgrade",
-      "score_id": "096d62efe6404afc8ec4f437c3390df1",
-      "report_type": "行动学习-认知升级",
+      "score_id": "f79c58a281ca4f4291956e85fcf61d04",
+      "report_type": "行动学习",
       "course_session": "第一次课 · 管理认知",
       "total_score": 76.2,
       "total_level": "优秀",
@@ -22,8 +22,8 @@
     },
     {
       "slug": "02_org_collaboration",
-      "score_id": "c12154e8c44b47cabbeecaf3ab35f679",
-      "report_type": "行动学习-组织协同",
+      "score_id": "726e630cbf3641f2bc084978494cd277",
+      "report_type": "行动学习",
       "course_session": "第二次课 · 组织协同",
       "total_score": 72.5,
       "total_level": "良好",
@@ -41,8 +41,8 @@
     },
     {
       "slug": "03_problem_solving",
-      "score_id": "3d634217fd4a47e78f65cfad13baea68",
-      "report_type": "行动学习-问题解决",
+      "score_id": "9657eb76739042f08ca7d977fbce065e",
+      "report_type": "行动学习",
       "course_session": "第三次课 · 问题解决",
       "total_score": 60.7,
       "total_level": "良好",

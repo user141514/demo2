@@ -240,15 +240,28 @@ def _build_comment(score, focus, transcript_present):
 
 
 def _build_takeaways(scored_dimensions):
-    ranked = sorted(scored_dimensions, key=lambda item: item["score"], reverse=True)
+    if not scored_dimensions:
+        return ["整体材料已形成基本表达，可继续补充更多事实支撑。"], [
+            "建议围绕目标、过程、结果与反思进一步补充证据，让评价依据更完整。"
+        ]
+
+    scores = [item["score"] for item in scored_dimensions]
+    average_score = sum(scores) / len(scores)
+    score_range = max(scores) - min(scores)
     strengths = [
-        "{}表现较强，当前材料对该维度支撑相对充分。".format(item["name"])
-        for item in ranked[:3]
+        _limit(
+            "整体材料在问题呈现、逻辑组织与行动支撑方面已有基础，能够支撑对汇报质量的综合判断。",
+            120,
+        )
     ]
-    improvements = [
-        "{}仍有明显提升空间，建议补充更直接的证据和说明。".format(item["name"])
-        for item in ranked[-3:]
-    ]
+    if average_score >= 7.5 and score_range <= 1.2:
+        improvements = [
+            "建议继续补充更具体的数据、案例和复盘闭环，让整体论证从完整走向更有说服力。"
+        ]
+    else:
+        improvements = [
+            "建议从材料完整度、证据颗粒度和表达连贯性三个方面补强，让整体评价更稳定。"
+        ]
     return strengths, improvements
 
 
@@ -260,12 +273,8 @@ def _build_overall_comment(report_type, total_score, strengths, improvements, tr
             report_type, total_to_level(total_score), total_score
         )
     )
-    strengths_text = "主要亮点集中在{}。".format(
-        "、".join(_strip_tail(item) for item in strengths[:2])
-    )
-    improvements_text = "后续建议重点补强{}。".format(
-        "、".join(_strip_tail(item) for item in improvements[:2])
-    )
+    strengths_text = strengths[0] if strengths else "整体材料已形成基本表达。"
+    improvements_text = improvements[0] if improvements else "建议继续补充证据与复盘闭环。"
     transcript_text = (
         "当前未提供录音材料，录音相关维度暂按待补充处理。"
         if not transcript_present

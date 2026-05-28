@@ -1,7 +1,7 @@
 {
   "audio_average": 5.4,
   "course_session": "第二次课 · 组织协同",
-  "created_at": "2026-05-28T05:40:09Z",
+  "created_at": "2026-05-28T11:48:05Z",
   "date": "2026-05-28",
   "dimensions": [
     {
@@ -93,9 +93,7 @@
   "doc_average": 7.5,
   "document_preview": "行动学习第二次课程组织协同汇报样例。 案例背景是管报与法报数据在月结第三天经常出现口径差异，导致业务部门反复解释，财务BP和经营分析团队互相等待。 直面问题部分，我没有把原因归为人的责任心不足，而是用七大协同障碍根源分析：组织分工不明确、目标差异、部门墙、沟通技能缺失、横向沟通机制不健全和缺乏协作文化。 根源剖析显示，RACI矩阵里数据口径确认人缺失，流程中没有同步节点，指标目标只考核本部门准时率，没有共同目标。 创新构想部分，我设计服务协同、指导协同、管控协同和情感协同四类机制：建立统一数据字典，设置双计双考机制，引入跨部门满意度互评，并建立问题升级机制。 结构性方法部分，我按聚焦、共创、对齐、闭环四步法确定共同目标，围绕组织、流程、目标、机制、氛围和影响力六个维度设计方案。 可操作性部分，短期1到2周内完成数据字段清单、责任人、同步时间节点和校验模板；中期1到3个月内上线月结协同看板，明确里程碑、风险应对和资源配置。 预期成果是月结差异项减少30%，重复沟通时间降低20%，争议问题在24小时内完成升级处理。",
   "improvements": [
-    "回答问题仍有明显提升空间，建议补充更直接的证据和说明。",
-    "时间管理仍有明显提升空间，建议补充更直接的证据和说明。",
-    "表达清晰仍有明显提升空间，建议补充更直接的证据和说明。"
+    "建议从材料完整度、证据颗粒度和表达连贯性三个方面补强，让整体评价更稳定。"
   ],
   "llm_model": "",
   "llm_provider": "",
@@ -103,24 +101,22 @@
     "name": "表达清晰",
     "score": 4.7
   },
-  "markdown_export_url": "/api/scores/c12154e8c44b47cabbeecaf3ab35f679/export?format=md",
+  "markdown_export_url": "/api/scores/726e630cbf3641f2bc084978494cd277/export?format=md",
   "name": "王敏-组织协同样例",
   "note": "手写样例冒烟验证：02_org_collaboration",
   "org": "财务共享中心",
-  "overall_comment": "行动学习-组织协同汇报当前综合评分已生成。 主要亮点集中在直面问题、创新构想。 后续建议重点补强回答问题、时间管理。 本次结果已同时综合文档与录音转写信息。",
-  "pdf_export_url": "/api/scores/c12154e8c44b47cabbeecaf3ab35f679/export?format=pdf",
+  "overall_comment": "行动学习-组织协同汇报当前综合评分已生成。 整体材料在问题呈现、逻辑组织与行动支撑方面已有基础，能够支撑对汇报质量的综合判断。 建议从材料完整度、证据颗粒度和表达连贯性三个方面补强，让整体评价更稳定。 本次结果已同时综合文档与录音转写信息。",
+  "pdf_export_url": "/api/scores/726e630cbf3641f2bc084978494cd277/export?format=pdf",
   "pdf_filename": "02_org_collaboration.pdf",
-  "report_type": "行动学习-组织协同",
-  "score_id": "c12154e8c44b47cabbeecaf3ab35f679",
+  "report_type": "行动学习",
+  "score_id": "726e630cbf3641f2bc084978494cd277",
   "scoring_mode": "heuristic",
   "strengths": [
-    "直面问题表现较强，当前材料对该维度支撑相对充分。",
-    "创新构想表现较强，当前材料对该维度支撑相对充分。",
-    "结构性方法表现较强，当前材料对该维度支撑相对充分。"
+    "整体材料在问题呈现、逻辑组织与行动支撑方面已有基础，能够支撑对汇报质量的综合判断。"
   ],
   "total_level": "良好",
   "total_score": 72.5,
   "transcript_present": true,
-  "upload_path": "db://score_artifacts/c12154e8c44b47cabbeecaf3ab35f679/source_pdf",
-  "user_id": "7ecdec77a975454ea5cc8bb2f862b3c0"
+  "upload_path": "db://score_artifacts/726e630cbf3641f2bc084978494cd277/source_pdf",
+  "user_id": "aaf1fe574932490b89d6a742c2fe30a5"
 }

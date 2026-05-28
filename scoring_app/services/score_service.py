@@ -31,6 +31,12 @@ COURSE_SESSION_OPTIONS = {
     "中期回顾工作坊",
 }
 
+COURSE_SESSION_REPORT_TYPES = {
+    "第一次课 · 管理认知": "行动学习-认知升级",
+    "第二次课 · 组织协同": "行动学习-组织协同",
+    "第三次课 · 问题解决": "行动学习-问题解决",
+}
+
 
 @dataclass
 class ScoreSubmissionInput:
@@ -57,6 +63,11 @@ def prepare_score_submission(form, files):
 
 
 def create_score_from_submission(submission, user_id):
+    scoring_report_type = resolve_scoring_report_type(
+        submission.report_type,
+        submission.course_session,
+    )
+
     try:
         document_text = extract_text_from_pdf_bytes(submission.pdf_bytes)
     except PdfExtractionError as exc:
@@ -64,7 +75,7 @@ def create_score_from_submission(submission, user_id):
 
     try:
         result = score_submission(
-            report_type=submission.report_type,
+            report_type=scoring_report_type,
             document_text=document_text,
             transcript_text=submission.transcript,
             metadata={
@@ -82,6 +93,7 @@ def create_score_from_submission(submission, user_id):
         raise ApplicationError("score_failed", str(exc), 422)
 
     result["user_id"] = user_id
+    result["report_type"] = submission.report_type
     result["course_session"] = submission.course_session
     result["upload_path"] = "db://score_artifacts/{}/source_pdf".format(result["score_id"])
     result["markdown_export_url"] = "/api/scores/{}/export?format=md".format(
@@ -218,6 +230,12 @@ def list_report_type_values():
 
 def list_report_type_keys():
     return list(REPORT_DEFINITIONS.keys())
+
+
+def resolve_scoring_report_type(report_type, course_session):
+    if report_type == "行动学习":
+        return COURSE_SESSION_REPORT_TYPES.get(course_session, report_type)
+    return report_type
 
 
 def _parse_submission(form, files):

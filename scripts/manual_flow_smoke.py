@@ -25,7 +25,7 @@ SAMPLES = [
         "slug": "01_cognitive_upgrade",
         "name": "李明-认知升级样例",
         "org": "战略发展部",
-        "report_type": "行动学习-认知升级",
+        "report_type": "行动学习",
         "course_session": "第一次课 · 管理认知",
         "document": "\n".join(
             [
@@ -52,7 +52,7 @@ SAMPLES = [
         "slug": "02_org_collaboration",
         "name": "王敏-组织协同样例",
         "org": "财务共享中心",
-        "report_type": "行动学习-组织协同",
+        "report_type": "行动学习",
         "course_session": "第二次课 · 组织协同",
         "document": "\n".join(
             [
@@ -79,7 +79,7 @@ SAMPLES = [
         "slug": "03_problem_solving",
         "name": "赵强-问题解决样例",
         "org": "制造运营部",
-        "report_type": "行动学习-问题解决",
+        "report_type": "行动学习",
         "course_session": "第三次课 · 问题解决",
         "document": "\n".join(
             [
