@@ -6,6 +6,26 @@ from .live_scoring import live_score_submission
 from .rules import DISCLAIMER, get_report_definition, score_to_level, total_to_level
 from .utils import now_iso
 
+# Lazy-initialized TF-IDF evidence ranker
+_ranker = None
+
+
+def _get_ranker():
+    """Return the module-level EvidenceRanker instance."""
+    global _ranker
+    return _ranker
+
+
+def _ensure_ranker(definition):
+    """Initialize or re-initialize the EvidenceRanker with a definition."""
+    global _ranker
+    try:
+        from .evidence_ranker import EvidenceRanker
+
+        _ranker = EvidenceRanker(definition)
+    except Exception:
+        _ranker = None
+
 
 class ScoringError(Exception):
     pass
@@ -155,6 +175,7 @@ def _assemble_result(report_type, metadata, transcript_present, dimension_result
 
 def _build_heuristic_dimensions(definition, document_text, transcript_text, transcript_present):
     dimension_results = []
+    used_sentences = set()
     for dimension in definition["dimensions"]:
         if dimension["source_key"] == "transcript" and not transcript_present:
             result = {
@@ -174,6 +195,14 @@ def _build_heuristic_dimensions(definition, document_text, transcript_text, tran
                 document_text if dimension["source_key"] == "document" else transcript_text
             )
             score = _score_dimension(relevant_text, dimension)
+            evidence = _build_evidence(
+                relevant_text,
+                dimension=dimension,
+                used_sentences=used_sentences,
+                definition=definition,
+            )
+            if evidence:
+                used_sentences.add(evidence)
             result = {
                 "id": dimension["id"],
                 "name": dimension["name"],
@@ -183,7 +212,7 @@ def _build_heuristic_dimensions(definition, document_text, transcript_text, tran
                 "material_source": dimension["material_source"],
                 "score": score,
                 "level_label": score_to_level(score),
-                "evidence": _build_evidence(relevant_text, dimension["keywords"]),
+                "evidence": evidence,
                 "comment": _build_comment(score, dimension["focus"], transcript_present),
             }
         dimension_results.append(result)
@@ -210,18 +239,120 @@ def _score_dimension(text, dimension):
     return round(score, 1)
 
 
-def _build_evidence(text, keywords):
+def _build_evidence(text, keywords=None, dimension=None, used_sentences=None, definition=None):
+    """Select best evidence sentence using weighted scoring (rank first, then fallback)."""
+    # Extract keywords from dimension if not provided directly
+    if keywords is None and dimension:
+        keywords = dimension.get("keywords", [])
+    if keywords is None:
+        keywords = []
+
+    # Try TF-IDF ranker if dimension and definition are available
+    if dimension and definition:
+        ranker = _get_ranker()
+        if ranker is None:
+            _ensure_ranker(definition)
+            ranker = _get_ranker()
+        if ranker:
+            try:
+                return ranker.best_evidence(text, dimension)
+            except Exception:
+                pass  # Fall back to weighted scoring
+
+    # Fallback: weighted sentence scoring
     sentences = _split_sentences(text)
-    for keyword in keywords:
-        for sentence in sentences:
-            if keyword in sentence and not looks_like_garbled_text(sentence):
-                return _limit(sentence, 80)
+    candidates = []
+    is_short = len(sentences) < 5
 
-    for sentence in sentences:
-        if not looks_like_garbled_text(sentence):
-            return _limit(sentence, 80)
+    for idx, sentence in enumerate(sentences):
+        if looks_like_garbled_text(sentence):
+            continue
 
-    return "文档文本提取质量不足，未找到可直接引用的有效证据。"
+        kw_density = _calc_keyword_density(sentence, keywords)
+        focus_score = _calc_focus_alignment(
+            sentence,
+            dimension.get("name", "") if dimension else "",
+            dimension.get("focus", "") if dimension else "",
+        )
+
+        if is_short:
+            # Short texts: position and exhaustivity are noisy, rely on keyword + focus only
+            total = 0.50 * kw_density + 0.50 * focus_score
+        else:
+            pos_score = _calc_position_bonus(idx, len(sentences))
+            exhaustivity = _calc_exhaustivity_penalty(sentence, used_sentences or set())
+            total = (
+                0.35 * kw_density + 0.40 * focus_score + 0.15 * pos_score - 0.10 * exhaustivity
+            )
+        candidates.append((total, sentence))
+
+    if not candidates:
+        return "文档文本提取质量不足，未找到可直接引用的有效证据。"
+
+    candidates.sort(key=lambda x: x[0], reverse=True)
+    return _limit(candidates[0][1], 80)
+
+
+def _calc_keyword_density(text, keywords):
+    """Calculate keyword hit ratio for a piece of text (0.0-1.0)."""
+    if not keywords:
+        return 0.0
+    hits = sum(1 for kw in keywords if kw in text)
+    return min(hits / float(len(keywords)), 1.0)
+
+
+def _calc_focus_alignment(text, dim_name, dim_focus):
+    """Calculate focus alignment score by matching name and focus tokens (0.0-1.0)."""
+    if not dim_name and not dim_focus:
+        return 0.0
+
+    focus_score = 0.0
+    name_score = 0.0
+
+    if dim_focus:
+        if dim_focus in text:
+            focus_score = 1.0
+        else:
+            text_chars = set(text)
+            focus_chars = set(dim_focus)
+            if focus_chars:
+                overlap = len(text_chars & focus_chars)
+                focus_score = overlap / len(focus_chars)
+
+    if dim_name:
+        if dim_name in text:
+            name_score = 0.8
+        else:
+            text_chars = set(text)
+            name_chars = set(dim_name)
+            if name_chars:
+                overlap = len(text_chars & name_chars)
+                name_score = 0.6 * (overlap / len(name_chars))
+
+    if dim_focus and dim_name:
+        return 0.6 * focus_score + 0.4 * name_score
+    elif dim_focus:
+        return focus_score
+    else:
+        return name_score
+
+
+def _calc_position_bonus(idx, total_sentences):
+    """Calculate position quality score (0.0-1.0) based on sentence position."""
+    if total_sentences <= 1:
+        return 1.0
+    if idx == 0:
+        return 1.0  # First sentence
+    if idx == total_sentences - 1:
+        return 0.6  # Last sentence
+    return 0.0
+
+
+def _calc_exhaustivity_penalty(sentence, used_sentences):
+    """Return 1.0 if the sentence is already used as evidence by another dimension."""
+    if not used_sentences:
+        return 0.0
+    return 1.0 if sentence in used_sentences else 0.0
 
 
 def _build_comment(score, focus, transcript_present):

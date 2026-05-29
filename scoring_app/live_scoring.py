@@ -45,6 +45,8 @@ def live_score_submission(report_type, definition, document_text, transcript_tex
         payload=payload,
         definition=definition,
         transcript_present=bool(transcript_text.strip()),
+        document_text=document_text,
+        transcript_text=transcript_text,
     )
     overall_comment = str(payload.get("overall_comment") or "").strip()
     if not overall_comment:
@@ -156,7 +158,18 @@ def _extract_json_payload(content):
         raise LiveScoringError("Failed to parse LLM JSON: {}".format(exc))
 
 
-def _normalize_dimensions(payload, definition, transcript_present):
+def _validate_evidence(evidence_text, source_text):
+    """Check if LLM-generated evidence text is grounded in the source text."""
+    if not evidence_text or len(evidence_text) < 5:
+        return False
+    # Strip leading/trailing ellipsis, punctuation, and whitespace
+    evidence_clean = evidence_text.strip("…、。. ")
+    if not evidence_clean:
+        return False
+    return evidence_clean in source_text
+
+
+def _normalize_dimensions(payload, definition, transcript_present, document_text="", transcript_text=""):
     raw_dimensions = payload.get("dimensions")
     if not isinstance(raw_dimensions, list):
         raise LiveScoringError("LLM output is missing dimensions list.")
@@ -204,10 +217,24 @@ def _normalize_dimensions(payload, definition, transcript_present):
             raise LiveScoringError("LLM returned invalid score for dimension {}.".format(dimension["id"]))
 
         numeric_score = max(0.0, min(10.0, numeric_score))
-        evidence = _limit(str(item.get("evidence") or "").strip(), 80)
-        comment = _limit(str(item.get("comment") or "").strip(), 120)
+        evidence = str(item.get("evidence") or "").strip()
+        comment = str(item.get("comment") or "").strip()
         if not evidence:
             raise LiveScoringError("LLM output is missing evidence for dimension {}.".format(dimension["id"]))
+
+        # Evidence grounding validation -- if LLM evidence is not found in source,
+        # fall back to heuristic evidence extraction
+        source_text = document_text if dimension["source_key"] == "document" else transcript_text
+        if source_text and not _validate_evidence(evidence, source_text):
+            from .scoring import _build_evidence  # lazy import avoids circular dependency
+
+            heuristic_evidence = _build_evidence(
+                source_text, dimension=dimension, definition=definition
+            )
+            evidence = heuristic_evidence
+
+        evidence = _limit(evidence, 80)
+        comment = _limit(comment, 120)
 
         normalized.append(
             {
