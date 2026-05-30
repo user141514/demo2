@@ -24,7 +24,13 @@ from scoring_app.rules import REPORT_DEFINITIONS, get_report_definition
 from scoring_app.scoring import (
     _build_evidence,
     _build_heuristic_dimensions,
+    _build_evidence_summary,
     _build_comment,
+    _calc_keyword_density,
+    _calc_focus_alignment,
+    _calc_position_bonus,
+    _calc_exhaustivity_penalty,
+    _score_dimension,
     _split_sentences,
     _limit,
     ScoringError,
@@ -894,6 +900,217 @@ class ApiContractTest(unittest.TestCase):
         md_resp = client.get(f"/api/scores/{score_id}/export?format=md")
         self.assertEqual(md_resp.status_code, 200)
         self.assertIn("text/markdown", md_resp.headers.get("Content-Type", ""))
+
+
+# ======================================================================
+#  10. Scoring helper functions — _calc_* and _build_evidence_summary
+# ======================================================================
+
+
+class ScoringHelperFunctionsTest(unittest.TestCase):
+    """Direct tests for scoring helper functions."""
+
+    # ----- _calc_keyword_density -----
+
+    def test_keyword_density_all_hit(self):
+        self.assertEqual(_calc_keyword_density("战略目标业务价值", ["战略", "目标", "价值"]), 1.0)
+
+    def test_keyword_density_partial_hit(self):
+        self.assertEqual(_calc_keyword_density("战略目标", ["战略", "价值", "业务"]), 1.0 / 3.0)
+
+    def test_keyword_density_no_hit(self):
+        self.assertEqual(_calc_keyword_density("无关内容", ["战略", "价值"]), 0.0)
+
+    def test_keyword_density_empty_keywords(self):
+        self.assertEqual(_calc_keyword_density("任意文本", []), 0.0)
+
+    # ----- _calc_focus_alignment -----
+
+    def test_focus_alignment_exact_focus_in_text(self):
+        score = _calc_focus_alignment("问题穿透深度表现良好", "", "问题穿透深度")
+        self.assertGreater(score, 0.0)
+
+    def test_focus_alignment_name_in_text(self):
+        score = _calc_focus_alignment("这个战略链接很清晰", "战略链接与价值认知", "")
+        self.assertGreater(score, 0.0)
+
+    def test_focus_alignment_no_match(self):
+        score = _calc_focus_alignment("无关内容", "战略链接", "问题穿透深度")
+        self.assertEqual(score, 0.0)
+
+    def test_focus_alignment_empty_inputs(self):
+        self.assertEqual(_calc_focus_alignment("文本", "", ""), 0.0)
+
+    # ----- _calc_position_bonus -----
+
+    def test_position_bonus_first_sentence(self):
+        self.assertGreater(_calc_position_bonus(0, 10), 0.0)
+
+    def test_position_bonus_last_sentence(self):
+        self.assertGreater(_calc_position_bonus(9, 10), 0.0)
+
+    def test_position_bonus_middle_sentence(self):
+        first = _calc_position_bonus(0, 10)
+        middle = _calc_position_bonus(5, 10)
+        self.assertGreater(first, middle)
+
+    def test_position_bonus_single_sentence(self):
+        self.assertGreaterEqual(_calc_position_bonus(0, 1), 0.0)
+
+    # ----- _calc_exhaustivity_penalty -----
+
+    def test_exhaustivity_penalty_already_used(self):
+        self.assertGreater(_calc_exhaustivity_penalty("已用句子", {"已用句子", "其他"}), 0.0)
+
+    def test_exhaustivity_penalty_not_used(self):
+        self.assertEqual(_calc_exhaustivity_penalty("新句子", {"已用句子"}), 0.0)
+
+    def test_exhaustivity_penalty_empty_used(self):
+        self.assertEqual(_calc_exhaustivity_penalty("任意句子", set()), 0.0)
+
+    # ----- _build_evidence_summary -----
+
+    def test_evidence_summary_excellent(self):
+        s = _build_evidence_summary(9.5, "问题穿透深度")
+        self.assertIn("问题穿透深度", s)
+        self.assertLessEqual(len(s), 15)
+
+    def test_evidence_summary_good(self):
+        s = _build_evidence_summary(6.5, "战略理解深度")
+        self.assertIn("战略理解深度", s)
+        self.assertLessEqual(len(s), 15)
+
+    def test_evidence_summary_unqualified(self):
+        s = _build_evidence_summary(2.0, "方案差异化")
+        self.assertIn("方案差异化", s)
+        self.assertLessEqual(len(s), 15)
+
+    def test_evidence_summary_empty_focus(self):
+        self.assertEqual(_build_evidence_summary(8.0, ""), "")
+
+    def test_evidence_summary_long_focus_truncated(self):
+        s = _build_evidence_summary(7.0, "这是一个非常长的focus描述文本需要截断")
+        self.assertLessEqual(len(s), 15)
+
+    # ----- _limit smart truncation -----
+
+    def test_limit_short_text_preserved(self):
+        self.assertEqual(_limit("短文本", 80), "短文本")
+
+    def test_limit_smart_truncation_preserves_head(self):
+        text = "A" * 100
+        result = _limit(text, 80)
+        head_size = int(80 * 0.6)
+        self.assertTrue(result.startswith("A" * head_size), f"Expected head {head_size} As, got: {result[:head_size+5]}")
+
+    def test_limit_smart_truncation_preserves_tail(self):
+        text = "A" * 50 + "B" * 50
+        result = _limit(text, 80)
+        self.assertIn("B", result.split("…")[-1])
+
+    def test_limit_smart_truncation_has_ellipsis(self):
+        text = "X" * 100
+        result = _limit(text, 80)
+        self.assertIn("…", result)
+
+    def test_limit_very_short_limit_falls_back_to_head_only(self):
+        text = "A" * 50
+        result = _limit(text, 12)
+        self.assertIn("…", result)
+        self.assertLessEqual(len(result), 12)
+
+
+# ======================================================================
+#  11. Evidence deduplication across dimensions
+# ======================================================================
+
+
+class EvidenceDeduplicationTest(unittest.TestCase):
+    """Evidence deduplication via used_sentences and exhaustivity penalty."""
+
+    def test_different_dimensions_get_different_evidence(self):
+        text = (
+            "战略目标是提升业务价值。"
+            "团队使用了RACI框架分析协同障碍。"
+            "通过数据驱动方法改进了流程效率。"
+            "创新方案解决了组织分工问题。"
+        )
+        dims = _build_heuristic_dimensions(
+            XL_DEF, text, "", transcript_present=False
+        )
+        scored_dims = [d for d in dims if d["score"] is not None]
+        evidence_texts = [d["evidence"] for d in scored_dims]
+        # Remove summary prefix for dedup check
+        raw_ev = [e.split("：", 1)[-1] if "：" in e else e for e in evidence_texts]
+        duplicates = len(raw_ev) - len(set(raw_ev))
+        # With few sentences per dimension, exhaustivity is a soft penalty,
+        # not a hard block. Accept at most 1 duplicate in tight scenarios.
+        self.assertLessEqual(
+            duplicates, 1,
+            f"Too many duplicate evidence: {raw_ev}, duplicates={duplicates}"
+        )
+
+    def test_evidence_summary_prepended_in_heuristic(self):
+        text = (
+            "战略目标是提升业务价值。团队使用了RACI框架分析协同障碍。"
+            "通过数据驱动方法改进了流程效率。"
+        ) * 3
+        dims = _build_heuristic_dimensions(
+            XL_DEF, text, "", transcript_present=False
+        )
+        scored_dims = [d for d in dims if d["score"] is not None]
+        for dim in scored_dims:
+            ev = dim["evidence"]
+            self.assertTrue(
+                "：" in ev or len(ev) <= 80,
+                f"Evidence should have summary prefix or be short: {ev[:60]}"
+            )
+
+    def test_no_transcript_dimensions_have_placeholder(self):
+        dims = _build_heuristic_dimensions(
+            XL_DEF, "文档内容足够长。文档内容足够长。" * 5, "", transcript_present=False
+        )
+        for dim in dims:
+            if dim["material_source"] == "录音转写":
+                self.assertIsNone(dim["score"])
+                self.assertIn("录音材料未提供", dim["evidence"])
+
+
+# ======================================================================
+#  12. _score_dimension() behavior
+# ======================================================================
+
+
+class ScoreDimensionTest(unittest.TestCase):
+    """Direct tests for _score_dimension()."""
+
+    def test_score_with_many_keywords_is_higher(self):
+        dim_low = {"keywords": ["X"], "needs_numbers": False}
+        dim_high = {"keywords": ["战略", "目标", "业务", "价值", "支撑", "痛点", "任务"], "needs_numbers": False}
+        text = "战略目标与业务价值支撑痛点任务。战略目标与业务价值支撑痛点任务。" * 3
+        low_score = _score_dimension(text, dim_low)
+        high_score = _score_dimension(text, dim_high)
+        self.assertGreater(high_score, low_score)
+
+    def test_score_with_numbers_gets_bonus(self):
+        dim = {"keywords": ["提升", "效率"], "needs_numbers": True}
+        text_no_num = "提升了团队效率。" * 5
+        text_with_num = "效率提升了30%，团队效果显著。提升了团队效率。" * 3
+        score_no = _score_dimension(text_no_num, dim)
+        score_yes = _score_dimension(text_with_num, dim)
+        self.assertGreaterEqual(score_yes, score_no)
+
+    def test_score_is_clamped_3_8_to_9_0(self):
+        dim = {"keywords": [], "needs_numbers": False}
+        self.assertGreaterEqual(_score_dimension("短", dim), 3.8)
+        very_rich = "战略目标业务价值支撑痛点任务框架模型工具方法认知协同解题。" * 20
+        self.assertLessEqual(_score_dimension(very_rich, dim), 9.0)
+
+    def test_garbled_text_scores_low(self):
+        dim = {"keywords": ["战略", "目标"], "needs_numbers": False}
+        garbled = "\x00\x01\x02\x03\x04\x05\x06\x07\x08" * 10
+        score = _score_dimension(garbled, dim)
+        self.assertLessEqual(score, 4.2)
 
 
 if __name__ == "__main__":
