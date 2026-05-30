@@ -85,7 +85,11 @@ class EvidenceRanker:
 
     @staticmethod
     def _limit(text, size):
-        """Truncate text to approximately *size* characters, appending an ellipsis."""
+        """Smart truncation: keep beginning ~60% and end ~35%, cut middle."""
         if len(text) <= size:
             return text
-        return text[: size - 1].rstrip() + "…"
+        head_size = int(size * 0.6)
+        tail_size = size - head_size - 1
+        if tail_size < 10:
+            return text[: size - 1].rstrip() + "…"
+        return text[:head_size].rstrip() + "…" + text[-tail_size:].lstrip()

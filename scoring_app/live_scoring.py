@@ -256,4 +256,8 @@ def _normalize_dimensions(payload, definition, transcript_present, document_text
 def _limit(text, size):
     if len(text) <= size:
         return text
-    return text[: size - 1].rstrip() + "…"
+    head_size = int(size * 0.6)
+    tail_size = size - head_size - 1
+    if tail_size < 10:
+        return text[: size - 1].rstrip() + "…"
+    return text[:head_size].rstrip() + "…" + text[-tail_size:].lstrip()
