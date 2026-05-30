@@ -203,6 +203,9 @@ def _build_heuristic_dimensions(definition, document_text, transcript_text, tran
             )
             if evidence:
                 used_sentences.add(evidence)
+            evidence_summary = _build_evidence_summary(score, dimension["focus"])
+            if evidence_summary:
+                evidence = evidence_summary + "：" + evidence
             result = {
                 "id": dimension["id"],
                 "name": dimension["name"],
@@ -353,6 +356,21 @@ def _calc_exhaustivity_penalty(sentence, used_sentences):
     if not used_sentences:
         return 0.0
     return 1.0 if sentence in used_sentences else 0.0
+
+
+def _build_evidence_summary(score, focus):
+    """Generate a short one-line summary prefix for heuristic evidence."""
+    label = score_to_level(score)
+    templates = {
+        "卓越": "{}表现突出",
+        "优秀": "{}方面内容充实",
+        "良好": "{}相关论述",
+        "合格": "{}部分提及",
+        "不合格": "{}内容不足",
+    }
+    if focus:
+        return _limit(templates.get(label, "{}相关内容").format(focus), 15)
+    return ""
 
 
 def _build_comment(score, focus, transcript_present):

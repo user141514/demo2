@@ -98,6 +98,7 @@ def _build_user_prompt(report_type, definition, document_text, transcript_text):
     {{
       "id": 1,
       "score": 8.3,
+      "summary": "不超过15字的一句话总结",
       "evidence": "不超过80字",
       "comment": "不超过120字"
     }}
@@ -234,6 +235,12 @@ def _normalize_dimensions(payload, definition, transcript_present, document_text
             evidence = heuristic_evidence
 
         evidence = _limit(evidence, 80)
+
+        summary = str(item.get("summary") or "").strip()
+        if summary:
+            evidence = summary + "：" + evidence
+            evidence = _limit(evidence, 80)
+
         comment = _limit(comment, 120)
 
         normalized.append(
