@@ -6,6 +6,7 @@ from pathlib import Path
 from unittest.mock import patch
 
 from scoring_app import create_app
+from scoring_app.rules import REPORT_DEFINITIONS
 
 from test.fixture_builder import (
     INPUT_ROOT,
@@ -131,6 +132,21 @@ class LiveProviderFallbackTestCase(unittest.TestCase):
             self.assertEqual(settings["llm_report_timeout_seconds"], 11)
         finally:
             self.dotenv_path.unlink(missing_ok=True)
+
+    def test_live_prompt_requires_user_facing_evidence_explanation(self):
+        from scoring_app.live_scoring import _build_system_prompt, _build_user_prompt
+
+        system_prompt = _build_system_prompt()
+        user_prompt = _build_user_prompt(
+            self.report_type,
+            REPORT_DEFINITIONS[self.report_type],
+            "Document text with goals, actions, outcomes, and reflection. " * 4,
+            "Transcript text with sequence, highlights, and conclusion. " * 4,
+        )
+
+        self.assertIn("not merely quote a raw excerpt", system_prompt)
+        self.assertIn("解释材料为什么支撑该维度评分", user_prompt)
+        self.assertIn("不要仅复制原文", user_prompt)
 
     def test_live_provider_exception_falls_back_and_still_persists_history(self):
         register_response = self.client.post(

@@ -63,8 +63,9 @@ def _build_system_prompt():
     return (
         "You are a professional training evaluation assistant. "
         "Score each dimension strictly from 0.0 to 10.0 with one decimal place. "
-        "Return JSON only. Evidence must quote or paraphrase a short supporting excerpt "
-        "from the provided material. Comment must be concise and evaluative."
+        "Return JSON only. Evidence must explain why the material supports the "
+        "dimension score, not merely quote a raw excerpt. Comment must be concise "
+        "and evaluative."
     )
 
 
@@ -96,7 +97,7 @@ def _build_user_prompt(report_type, definition, document_text, transcript_text):
     {{
       "id": 1,
       "score": 8.3,
-      "evidence": "不超过80字",
+      "evidence": "不超过140字；解释材料为什么支撑该维度评分，不要直接粘贴原文片段",
       "comment": "不超过120字"
     }}
   ]
@@ -109,6 +110,7 @@ def _build_user_prompt(report_type, definition, document_text, transcript_text):
 5. score 取值范围 0.0-10.0，保留 1 位小数。
 6. 若存在课程专用评分标准，必须按其中的锚定区间、评分指引、常见误区和扣分规则判定分数。
 7. 输出结构以维度清单为准；课程专用评分标准用于解释每个维度应看哪些证据、何时加分或扣分。
+8. evidence 面向用户展示，必须改写为可理解的评分依据：说明材料命中了哪些评价要点、支撑强弱和对应分数原因；不要仅复制原文或使用省略号截断原文。
 
 维度清单：
 {dimension_lines}
@@ -204,7 +206,7 @@ def _normalize_dimensions(payload, definition, transcript_present):
             raise LiveScoringError("LLM returned invalid score for dimension {}.".format(dimension["id"]))
 
         numeric_score = max(0.0, min(10.0, numeric_score))
-        evidence = _limit(str(item.get("evidence") or "").strip(), 80)
+        evidence = _limit(str(item.get("evidence") or "").strip(), 140)
         comment = _limit(str(item.get("comment") or "").strip(), 120)
         if not evidence:
             raise LiveScoringError("LLM output is missing evidence for dimension {}.".format(dimension["id"]))

@@ -183,7 +183,7 @@ def _build_heuristic_dimensions(definition, document_text, transcript_text, tran
                 "material_source": dimension["material_source"],
                 "score": score,
                 "level_label": score_to_level(score),
-                "evidence": _build_evidence(relevant_text, dimension["keywords"]),
+                "evidence": _build_evidence(relevant_text, dimension, score),
                 "comment": _build_comment(score, dimension["focus"], transcript_present),
             }
         dimension_results.append(result)
@@ -210,18 +210,53 @@ def _score_dimension(text, dimension):
     return round(score, 1)
 
 
-def _build_evidence(text, keywords):
-    sentences = _split_sentences(text)
-    for keyword in keywords:
-        for sentence in sentences:
-            if keyword in sentence and not looks_like_garbled_text(sentence):
-                return _limit(sentence, 80)
+def _build_evidence(text, dimension, score):
+    normalized = text.strip()
+    keywords = dimension["keywords"]
+    keyword_hits = _ordered_unique([keyword for keyword in keywords if keyword in normalized])
+    readable_sentences = [
+        sentence for sentence in _split_sentences(normalized)
+        if not looks_like_garbled_text(sentence)
+    ]
+    focus = dimension["focus"]
+    source = dimension["material_source"]
+    score_label = score_to_level(score)
+    has_numbers = _has_relevant_number(readable_sentences, keyword_hits)
 
-    for sentence in sentences:
-        if not looks_like_garbled_text(sentence):
-            return _limit(sentence, 80)
+    if not readable_sentences:
+        return "当前{}文本可读性不足，难以识别与「{}」直接相关的有效信息，因此该维度依据偏弱。".format(
+            source,
+            focus,
+        )
 
-    return "文档文本提取质量不足，未找到可直接引用的有效证据。"
+    if keyword_hits:
+        signal_text = "、".join(keyword_hits[:4])
+        if len(keyword_hits) >= 4:
+            coverage_text = "覆盖较多"
+        elif len(keyword_hits) >= 2:
+            coverage_text = "已有一定"
+        else:
+            coverage_text = "仅有初步"
+        number_text = "，并出现量化信息" if has_numbers else ""
+        return _limit(
+            "{}材料围绕「{}」{}相关信号（如{}）{}，可说明该维度达到{}水平。".format(
+                source,
+                focus,
+                coverage_text,
+                signal_text,
+                number_text,
+                score_label,
+            ),
+            140,
+        )
+
+    return _limit(
+        "{}能形成基本表述，但与「{}」直接对应的关键信号不足，当前评分更多来自材料完整度和可读性，支撑力度有限。".format(
+            source,
+            focus,
+        ),
+        140,
+    )
 
 
 def _build_comment(score, focus, transcript_present):
@@ -277,6 +312,28 @@ def _build_overall_comment(report_type, total_score, strengths, improvements, tr
         ),
         220,
     )
+
+
+def _ordered_unique(values):
+    seen = set()
+    unique = []
+    for value in values:
+        if value in seen:
+            continue
+        seen.add(value)
+        unique.append(value)
+    return unique
+
+
+def _has_relevant_number(sentences, keyword_hits):
+    if not keyword_hits:
+        return False
+    for sentence in sentences:
+        if not any(keyword in sentence for keyword in keyword_hits):
+            continue
+        if re.search(r"\d+(\.\d+)?%?", sentence):
+            return True
+    return False
 
 
 def _split_sentences(text):

@@ -179,6 +179,45 @@ class ScorePipelineTestCase(unittest.TestCase):
         self.assertEqual(len(history_items), 1)
         self.assertEqual(history_items[0]["score_id"], "pipeline-stream-001")
 
+    def test_heuristic_evidence_explains_basis_instead_of_echoing_source_text(self):
+        from scoring_app.scoring import score_submission
+
+        document_text = (
+            "股票代码：301039.SZ 中集车辆（集团）股份有限公司 CIMC Vehicles "
+            "MBA人才池二期培训第一次行动学习材料。"
+            "材料围绕战略目标、业务痛点、组织协同、行动计划、结果指标、复盘反思展开。"
+            "报告说明了目标、任务、业务价值、方法框架、具体动作、执行节点和改善结果。"
+            * 8
+        )
+        transcript_text = (
+            "首先说明问题背景，其次展开原因分析，然后介绍行动方案和结果指标，最后总结复盘。"
+            * 6
+        )
+
+        with patch("scoring_app.scoring.live_score_submission", side_effect=RuntimeError("mock")):
+            payload = score_submission(
+                self.report_type,
+                document_text,
+                transcript_text,
+                {
+                    "name": "Evidence Student",
+                    "org": "Delivery Team",
+                    "date": "2026-05-31",
+                    "course_session": "\u7b2c\u4e8c\u6b21\u8bfe \u00b7 \u7ec4\u7ec7\u534f\u540c",
+                    "note": "",
+                    "pdf_filename": "evidence.pdf",
+                    "upload_path": "",
+                    "document_preview": document_text[:800],
+                },
+            )
+
+        first_evidence = payload["dimensions"][0]["evidence"]
+        self.assertNotIn("股票代码", first_evidence)
+        self.assertNotIn("CIMC Vehicles", first_evidence)
+        self.assertNotIn("量化信息", first_evidence)
+        self.assertIn("材料", first_evidence)
+        self.assertIn("相关", first_evidence)
+
     def test_garbled_inline_transcript_falls_back_to_uploaded_file_text(self):
         self._register_flow_user(email="fallback@example.com", display_name="Fallback User")
         captured = {}
