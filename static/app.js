@@ -1298,6 +1298,8 @@ function renderDimensions(dimensions) {
 
 function renderDimensionItem(item) {
   const scoreText = item.score == null ? "待补充" : formatScore(item.score);
+  const evidenceText = stripStockCodeLabel(item.evidence || "--");
+  const commentText = stripStockCodeLabel(item.comment || "--");
   return `
     <article class="dim-item">
       <div class="dim-head">
@@ -1318,8 +1320,8 @@ function renderDimensionItem(item) {
   )}</div>
         </div>
       </div>
-      <div class="dim-evidence"><strong>评分依据：</strong>${escapeHtml(item.evidence || "--")}</div>
-      <div class="dim-comment"><strong>维度评语：</strong>${escapeHtml(item.comment || "--")}</div>
+      <div class="dim-evidence"><strong>评分依据：</strong>${escapeHtml(evidenceText)}</div>
+      <div class="dim-comment"><strong>维度评语：</strong>${escapeHtml(commentText)}</div>
     </article>
   `;
 }
@@ -1339,6 +1341,13 @@ function levelClassName(label) {
     return "level-fail";
   }
   return "level-pending";
+}
+
+function stripStockCodeLabel(text) {
+  return String(text || "")
+    .replace(/\s*股票代码[:：]\s*[A-Z0-9.()-]+/g, "")
+    .replace(/\s{2,}/g, " ")
+    .trim();
 }
 
 function groupDimensions(dimensions) {
