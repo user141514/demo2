@@ -142,7 +142,6 @@ function cacheElements() {
     "result-lowest",
     "result-source",
     "result-dimensions",
-    "result-comment",
     "result-strengths",
     "result-improvements",
     "result-disclaimer",
@@ -1272,8 +1271,6 @@ function renderResult(score, options = {}) {
     ? `${score.lowestDimension.name || "--"} · ${formatScore(score.lowestDimension.score)}`
     : "--";
   els.resultSource.textContent = score.audioMissing ? "无录音" : "文档 + 录音";
-  els.resultComment.textContent =
-    score.overall_comment || score.overall || score.overview || "--";
   els.resultDisclaimer.textContent =
     score.disclaimer || "本报告由系统自动生成，仅供参考，最终结论以人工审核为准。";
   els.exportPerson.textContent = score.name || "--";

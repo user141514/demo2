@@ -686,7 +686,6 @@ select {
   line-height: 1.8;
 }
 
-.conclusion-summary,
 .result-conclusions .disclaimer {
   grid-column: 1 / -1;
 }
