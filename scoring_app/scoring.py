@@ -50,6 +50,8 @@ def score_submission(report_type, document_text, transcript_text, metadata):
         )
         dimension_results = live_payload["dimensions"]
         overall_comment = live_payload["overall_comment"]
+        report_strengths = live_payload.get("strengths") or None
+        report_improvements = live_payload.get("improvements") or None
         scoring_mode = live_payload.get("mode", "live")
         llm_provider = live_payload.get("provider", "")
         llm_model = live_payload.get("model", "")
@@ -70,6 +72,8 @@ def score_submission(report_type, document_text, transcript_text, metadata):
             improvements=improvements,
             transcript_present=transcript_present,
         )
+        report_strengths = None
+        report_improvements = None
         scoring_mode = "heuristic"
         llm_provider = ""
         llm_model = ""
@@ -80,6 +84,8 @@ def score_submission(report_type, document_text, transcript_text, metadata):
         transcript_present=transcript_present,
         dimension_results=dimension_results,
         overall_comment=overall_comment,
+        report_strengths=report_strengths,
+        report_improvements=report_improvements,
     )
     result["scoring_mode"] = scoring_mode
     result["llm_provider"] = llm_provider
@@ -87,7 +93,15 @@ def score_submission(report_type, document_text, transcript_text, metadata):
     return result
 
 
-def _assemble_result(report_type, metadata, transcript_present, dimension_results, overall_comment):
+def _assemble_result(
+    report_type,
+    metadata,
+    transcript_present,
+    dimension_results,
+    overall_comment,
+    report_strengths=None,
+    report_improvements=None,
+):
     scored_dimensions = [item for item in dimension_results if item["score"] is not None]
     if not scored_dimensions:
         raise ScoringError("当前材料无法形成有效评分。")
@@ -111,10 +125,12 @@ def _assemble_result(report_type, metadata, transcript_present, dimension_result
     doc_average = round(sum(doc_scores) / len(doc_scores), 1) if doc_scores else None
     audio_average = round(sum(audio_scores) / len(audio_scores), 1) if audio_scores else None
     lowest_dimension = min(scored_dimensions, key=lambda item: item["score"])
-    strengths, improvements = _build_takeaways(scored_dimensions)
+    generated_strengths, generated_improvements = _build_takeaways(scored_dimensions)
+    strengths = report_strengths or generated_strengths
+    improvements = report_improvements or generated_improvements
 
     if overall_comment:
-        overall_comment = _limit(overall_comment, 220)
+        overall_comment = _limit(overall_comment, 700)
     else:
         overall_comment = _build_overall_comment(
             report_type=report_type,
@@ -224,22 +240,22 @@ def _build_evidence(text, dimension, score):
     has_numbers = _has_relevant_number(readable_sentences, keyword_hits)
 
     if not readable_sentences:
-        return "当前{}文本可读性不足，难以识别与「{}」直接相关的有效信息，因此该维度依据偏弱。".format(
+        return "优势亮点：当前{}文本可读性不足，尚难识别与「{}」直接相关的有效信息，因此该维度暂缺可用于支撑评分的具体亮点。".format(
             source,
             focus,
         )
 
     if keyword_hits:
-        signal_text = "、".join(keyword_hits[:4])
+        signal_text = "、".join(keyword_hits[:5])
         if len(keyword_hits) >= 4:
-            coverage_text = "覆盖较多"
+            coverage_text = "覆盖较完整"
         elif len(keyword_hits) >= 2:
-            coverage_text = "已有一定"
+            coverage_text = "已有一定覆盖"
         else:
-            coverage_text = "仅有初步"
-        number_text = "，并出现量化信息" if has_numbers else ""
+            coverage_text = "形成初步覆盖"
+        number_text = "，同时出现可追踪的量化信号" if has_numbers else ""
         return _limit(
-            "{}材料围绕「{}」{}相关信号（如{}）{}，可说明该维度达到{}水平。".format(
+            "优势亮点：{}材料围绕「{}」{}，可识别到{}等相关关键信号{}。这些内容说明汇报并非停留在概念表述，而是已经触及该维度的核心评价要点，因此可支撑{}水平的判断。".format(
                 source,
                 focus,
                 coverage_text,
@@ -247,15 +263,15 @@ def _build_evidence(text, dimension, score):
                 number_text,
                 score_label,
             ),
-            140,
+            220,
         )
 
     return _limit(
-        "{}能形成基本表述，但与「{}」直接对应的关键信号不足，当前评分更多来自材料完整度和可读性，支撑力度有限。".format(
+        "优势亮点：{}能够形成基本表述，但与「{}」直接对应的关键信号不足。当前评分更多来自材料完整度和可读性，尚未充分呈现工具、案例、数据或行为结果等强支撑证据。".format(
             source,
             focus,
         ),
-        140,
+        220,
     )
 
 
@@ -268,49 +284,88 @@ def _build_comment(score, focus, transcript_present):
         "合格": "该维度已有基本表达，但论据与完整性偏弱。",
         "不合格": "该维度材料支撑不足，难以形成有效判断。",
     }[label]
-    follow_up = "建议继续围绕{}补充更具体的案例、动作和结果。".format(focus)
+    follow_up = "建议围绕{}补充更具体的案例、动作、结果数据和反思链条，让评委能看到从问题到行动再到成效的闭环。".format(focus)
     if not transcript_present:
-        follow_up = "当前仅基于已提供材料形成判断，建议后续补充完整录音信息。"
-    return _limit("{} {}".format(tone, follow_up), 120)
+        follow_up = "当前仅基于已提供材料形成判断，建议后续补充完整录音信息，以便同时评估现场表达、节奏控制和逻辑呈现。"
+    return _limit("改进空间：{} {}".format(tone, follow_up), 180)
 
 
 def _build_takeaways(scored_dimensions):
     ranked = sorted(scored_dimensions, key=lambda item: item["score"], reverse=True)
-    strengths = [
-        "{}表现较强，当前材料对该维度支撑相对充分。".format(item["name"])
-        for item in ranked[:3]
-    ]
-    improvements = [
-        "{}仍有明显提升空间，建议补充更直接的证据和说明。".format(item["name"])
-        for item in ranked[-3:]
-    ]
+    strengths = [_strength_takeaway(item) for item in ranked[:3]]
+    weaker = sorted(scored_dimensions, key=lambda item: item["score"])[:4]
+    improvements = [_improvement_takeaway(item) for item in weaker]
+    if len(improvements) < 5:
+        improvements.append(
+            "将关键量化成效做成视觉冲击页：把百分比、天数、阶段改善等核心数据放大呈现，配合趋势图或箭头对比，避免在正文或口述中被评委遗漏。"
+        )
+    if len(improvements) < 6:
+        improvements.append(
+            "强化正式汇报的叙事闭环：建议按照问题背景、工具方法、行动分工、结果验证、个人反思的顺序组织材料，让评委能快速看见管理成长路径。"
+        )
     return strengths, improvements
+
+
+def _strength_takeaway(item):
+    signal = _extract_evidence_signal(item.get("evidence") or "")
+    if item["score"] >= 8.0:
+        tone = "优势较突出"
+    elif item["score"] >= 7.0:
+        tone = "表现较扎实"
+    elif item["score"] >= 6.0:
+        tone = "具备基础亮点"
+    else:
+        tone = "已有可保留线索，但仍需明显补强"
+    return _limit(
+        "{}得分{}，{}，材料中可见{}。".format(
+            item["name"],
+            item["score"],
+            tone,
+            signal,
+        ),
+        160,
+    )
+
+
+def _improvement_takeaway(item):
+    name = item["name"]
+    if "复盘" in name or "认知" in name:
+        return "补充结构化反思页，直面个人不足：建议呈现最大收获、关键失误或能力短板、认知变化和1-2条可观察行为改变，避免只停留在宏观感悟。"
+    if "战略" in name or "知行" in name:
+        return "补强战略到行动的逻辑闭环：建议明确说明任务如何支撑公司战略、业务痛点和组织价值，并显性引用5WHY、逻辑树等问题解决工具。"
+    if "课题" in name or "创新" in name:
+        return "强化课题创新突破点：在已有业务价值之外，建议补充差异化方法、可验证收益和对现状的破局思考，避免只呈现常规管理动作。"
+    if "规划" in name or "前瞻" in name:
+        return "完善资源规划与协同安排：建议列明跨部门角色、数据权限、预算或系统支持、关键里程碑和决策节点，增强课题立项的可执行性。"
+    if "逻辑" in name or "展现" in name:
+        return "优化现场表达节奏：建议在关键数据和结论处放慢语速、停顿1-2秒并指向PPT，让评委同步接收核心证据。"
+    return "{}仍有提升空间，建议补充更具体的案例、量化证据、行动分工和结果验证。".format(name)
 
 
 def _build_overall_comment(report_type, total_score, strengths, improvements, transcript_present):
     score_part = (
-        "{}汇报当前综合评分已生成。".format(report_type)
+        "{}汇报已完成综合评估。".format(report_type)
         if total_score is None
-        else "{}汇报当前综合评级为{}，总分{}分。".format(
+        else "{}汇报综合评级为{}，总分{}分。".format(
             report_type, total_to_level(total_score), total_score
         )
     )
-    strengths_text = "主要亮点集中在{}。".format(
-        "、".join(_strip_tail(item) for item in strengths[:2])
+    strengths_text = "主要亮点或可保留线索集中在{}，说明汇报已经具备一定业务洞察和执行基础。".format(
+        "；".join(_condense_takeaway(item) for item in strengths[:2])
     )
-    improvements_text = "后续建议重点补强{}。".format(
-        "、".join(_strip_tail(item) for item in improvements[:2])
+    improvements_text = "主要提升空间在于{}，后续应把抽象判断转化为可被评委直接看见的证据链。".format(
+        "；".join(_condense_takeaway(item) for item in improvements[:2])
     )
     transcript_text = (
         "当前未提供录音材料，录音相关维度暂按待补充处理。"
         if not transcript_present
-        else "本次结果已同时综合文档与录音转写信息。"
+        else "本次结果已同时综合书面材料与录音转写信息，结论兼顾材料质量和现场呈现。"
     )
     return _limit(
         "{} {} {} {}".format(
             score_part, strengths_text, improvements_text, transcript_text
         ),
-        220,
+        700,
     )
 
 
@@ -354,6 +409,34 @@ def _split_sentences(text):
 
 def _strip_tail(text):
     return text.split("表现")[0].split("仍有")[0]
+
+
+def _strip_takeaway_prefix(text):
+    cleaned = text
+    for prefix in ("补充结构化反思页，", "补强战略到行动的逻辑闭环：", "强化课题创新突破点：", "完善资源规划与协同安排：", "优化现场表达节奏："):
+        cleaned = cleaned.replace(prefix, "")
+    return _strip_tail(cleaned)
+
+
+def _extract_evidence_signal(text):
+    evidence = text
+    if evidence.startswith("优势亮点："):
+        evidence = evidence[len("优势亮点：") :]
+    match = re.search(r"可识别到(.+?)。", evidence)
+    if match:
+        return match.group(1)
+    match = re.search(r"材料围绕「(.+?)」(.+?)，", evidence)
+    if match:
+        return "围绕{}的{}".format(match.group(1), match.group(2))
+    if "能够形成基本表述" in evidence:
+        return "基本表述和材料完整度线索"
+    return _limit(evidence, 70)
+
+
+def _condense_takeaway(text):
+    cleaned = _strip_takeaway_prefix(text)
+    sentence = cleaned.split("。")[0]
+    return _limit(sentence, 80)
 
 
 def _limit(text, size):

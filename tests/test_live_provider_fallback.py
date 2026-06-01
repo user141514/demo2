@@ -145,8 +145,12 @@ class LiveProviderFallbackTestCase(unittest.TestCase):
         )
 
         self.assertIn("not merely quote a raw excerpt", system_prompt)
-        self.assertIn("解释材料为什么支撑该维度评分", user_prompt)
+        self.assertIn("consultant-report style", system_prompt)
+        self.assertIn("正式评估报告", user_prompt)
+        self.assertIn("优势亮点", user_prompt)
+        self.assertIn("改进空间", user_prompt)
         self.assertIn("不要仅复制原文", user_prompt)
+        self.assertIn("补充结构化反思页", user_prompt)
 
     def test_live_provider_exception_falls_back_and_still_persists_history(self):
         register_response = self.client.post(
