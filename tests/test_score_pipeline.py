@@ -333,7 +333,7 @@ class ScorePipelineTestCase(unittest.TestCase):
 
     def _build_score_result(self, score_id="pipeline-score-001"):
         dimensions = self.report_definition["dimensions"]
-        selected = [dimensions[0], dimensions[5], dimensions[8]]
+        selected = [dimensions[0], dimensions[2], dimensions[4]]
         scores = [8.8, 8.1, 7.9]
         comments = [
             "Strong support from the submitted material.",

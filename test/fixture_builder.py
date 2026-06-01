@@ -92,16 +92,16 @@ def build_sample_score_result(user_id="fixture-user", score_id="fixture-score-00
     report_type = get_report_type_by_definition_id("wg")
     definition = REPORT_DEFINITIONS[report_type]
     dimensions = definition["dimensions"]
-    selected = [dimensions[0], dimensions[1], dimensions[8]]
+    selected = [dimensions[0], dimensions[2], dimensions[4]]
     scores = [8.8, 8.6, 8.0]
     evidence = [
         "材料中说明了目标、行动与结果之间的链路。",
-        "文档展示了框架应用、问题分析与方案协同方式。",
+        "文档说明课题围绕业务痛点提出价值主张，并体现优化创新思路。",
         "转写中对汇报顺序、重点和总结表达较为清楚。",
     ]
     comments = [
         "该维度支撑较强，能够说明战略价值与任务连接。",
-        "该维度结构清晰，工具与方法使用较为完整。",
+        "该维度能够说明课题价值与创新方向，建议继续补充可验证收益。",
         "该维度表达顺畅，但仍可补充更多逻辑链条细节。",
     ]
 

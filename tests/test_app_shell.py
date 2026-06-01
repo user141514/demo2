@@ -63,6 +63,7 @@ class AppShellTestCase(unittest.TestCase):
         self.assertIn("items", payload)
         self.assertTrue(payload["items"])
         report_type_keys = [item["key"] for item in payload["items"]]
+        self.assertNotIn("行动学习", report_type_keys)
         self.assertIn("行动学习-认知升级", report_type_keys)
         self.assertIn("行动学习-组织协同", report_type_keys)
         self.assertIn("行动学习-问题解决", report_type_keys)

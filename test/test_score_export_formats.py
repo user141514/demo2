@@ -81,7 +81,7 @@ class ScoreExportFormatsTestCase(unittest.TestCase):
     def _build_score_result(self, user_id, score_id):
         definition = REPORT_DEFINITIONS[self.report_type]
         dimensions = definition["dimensions"]
-        selected = [dimensions[0], dimensions[5], dimensions[8]]
+        selected = [dimensions[0], dimensions[2], dimensions[4]]
         scores = [8.8, 8.1, 7.9]
         evidence = [
             "Document shows clear linkage between target, action, and outcome.",

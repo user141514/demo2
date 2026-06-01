@@ -18,16 +18,11 @@ class DocumentAlignmentTestCase(unittest.TestCase):
                     ("逻辑性与展现力", 20.0, "录音转写"),
                 ],
                 "dimensions": [
-                    ("战略链接与价值认知", 5.5, "文档"),
-                    ("知识融合与框架应用", 8.25, "文档"),
-                    ("行为的具体性与可观察性", 5.5, "文档"),
-                    ("行动的有效性与结果导向", 5.5, "文档"),
-                    ("反思深刻性与真诚度", 5.5, "文档"),
-                    ("课题的战略价值", 2.5, "文档"),
-                    ("目标与规划的前瞻性", 2.5, "文档"),
-                    ("创新与突破性", 1.25, "文档"),
-                    ("逻辑的严谨性和链条完整性", 2.0, "录音转写"),
-                    ("材料与汇报的展现力", 2.0, "录音转写"),
+                    ("战略链接与知行合一", 30.0, "文档"),
+                    ("复盘深度与认知迭代", 25.0, "文档"),
+                    ("课题价值与创新", 15.0, "文档"),
+                    ("规划可行与前瞻", 10.0, "文档"),
+                    ("逻辑严谨与展现力", 20.0, "录音转写"),
                 ],
             },
             "行动学习": {
@@ -110,6 +105,37 @@ class DocumentAlignmentTestCase(unittest.TestCase):
             ]
             self.assertEqual(actual_groups, report_expectation["groups"])
             self.assertEqual(actual_dimensions, report_expectation["dimensions"])
+            if definition["id"] == "wg":
+                self.assert_report_weight_integrity(definition)
+
+    def assert_report_weight_integrity(self, definition):
+        group_weights = {
+            group["name"]: group["weight"]
+            for group in definition["groups"]
+        }
+        self.assertAlmostEqual(sum(group_weights.values()), 100.0)
+        self.assertAlmostEqual(
+            sum(dimension["actual_weight"] for dimension in definition["dimensions"]),
+            100.0,
+        )
+        self.assertEqual(
+            sorted(dimension["id"] for dimension in definition["dimensions"]),
+            list(range(1, len(definition["dimensions"]) + 1)),
+        )
+
+        for group_name, group_weight in group_weights.items():
+            grouped_dimensions = [
+                dimension
+                for dimension in definition["dimensions"]
+                if dimension["group"] == group_name
+            ]
+            self.assertTrue(grouped_dimensions, group_name)
+            self.assertAlmostEqual(
+                sum(dimension["actual_weight"] for dimension in grouped_dimensions),
+                group_weight,
+            )
+            for dimension in grouped_dimensions:
+                self.assertEqual(dimension["group_weight"], group_weight)
 
     def test_scoring_anchors_and_disclaimer_match_original_spec(self):
         self.assertEqual(

@@ -21,6 +21,9 @@ from ..scoring import ScoringError, score_submission
 from ..utils import now_iso
 
 
+HIDDEN_REPORT_TYPE_OPTIONS = {"行动学习"}
+
+
 COURSE_SESSION_OPTIONS = {
     "第一次课 · 管理认知",
     "第二次课 · 组织协同",
@@ -213,6 +216,7 @@ def list_report_type_values():
     return [
         {"key": report_type, **definition}
         for report_type, definition in REPORT_DEFINITIONS.items()
+        if report_type not in HIDDEN_REPORT_TYPE_OPTIONS
     ]
 
 

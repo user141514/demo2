@@ -17,8 +17,7 @@ const API = {
 const AUTH_MODES = ["login", "register", "forgot", "reset"];
 
 const DEFAULT_REPORT_TYPES = [
-  { key: "温故知新", name: "温故知新", description: "个人汇报 · 10个子维度" },
-  { key: "行动学习", name: "行动学习", description: "作业汇报 · 7个子维度" },
+  { key: "温故知新", name: "温故知新", description: "个人汇报 · 5个评估维度" },
   {
     key: "行动学习-认知升级",
     name: "行动学习-认知升级",

@@ -329,10 +329,22 @@ def _has_relevant_number(sentences, keyword_hits):
     if not keyword_hits:
         return False
     for sentence in sentences:
-        if not any(keyword in sentence for keyword in keyword_hits):
+        if _looks_like_identifier_sentence(sentence):
+            continue
+        keyword_count = sum(1 for keyword in keyword_hits if keyword in sentence)
+        if keyword_count < 2:
             continue
         if re.search(r"\d+(\.\d+)?%?", sentence):
             return True
+    return False
+
+
+def _looks_like_identifier_sentence(sentence):
+    compact = re.sub(r"\s+", "", sentence)
+    if re.search(r"(股票代码|证券代码)[:：]?\d{6}", compact):
+        return True
+    if re.search(r"\b\d{6}\.(SZ|SH|BJ|HK)\b", sentence, re.IGNORECASE):
+        return True
     return False
 
 
