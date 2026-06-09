@@ -1,6 +1,7 @@
 import json as _json
 from uuid import uuid4
 
+from ..assignment_insights import extract_assignment_insights
 from ..live_scoring import LiveScoringError, live_score_submission
 from ..pdf_extract import PdfExtractionError, extract_text_from_pdf_bytes
 from ..repository import store_score_bundle
@@ -77,15 +78,19 @@ def route_strategy(state: EvalState) -> EvalState:
         state.error = "报告定义未加载，无法进行评分。"
         return state
 
+    assignment_insights = extract_assignment_insights(state.document_text, state.transcript_text)
     try:
         payload = live_score_submission(
             report_type=state.report_type,
             definition=definition,
             document_text=state.document_text,
             transcript_text=state.transcript_text,
+            assignment_insights=assignment_insights,
         )
         state.dimension_results = payload["dimensions"]
         state.overall_comment = payload["overall_comment"]
+        state.strengths = payload.get("strengths") or []
+        state.improvements = payload.get("improvements") or []
         state.scoring_mode = payload.get("mode", "live")
         state.llm_provider = payload.get("provider", "")
         state.llm_model = payload.get("model", "")
@@ -107,6 +112,7 @@ def score_llm(state: EvalState) -> EvalState:
     if state.error:
         return state
 
+    assignment_insights = extract_assignment_insights(state.document_text, state.transcript_text)
     try:
         result = _assemble_result(
             report_type=state.report_type,
@@ -114,6 +120,9 @@ def score_llm(state: EvalState) -> EvalState:
             transcript_present=state.transcript_present,
             dimension_results=state.dimension_results,
             overall_comment=state.overall_comment,
+            report_strengths=state.strengths or None,
+            report_improvements=state.improvements or None,
+            assignment_insights=assignment_insights,
         )
         state.total_score = result["total_score"]
         state.total_level = result["total_level"]
@@ -144,21 +153,24 @@ def score_heuristic(state: EvalState) -> EvalState:
         state.error = "报告定义未加载，无法进行评分。"
         return state
 
+    assignment_insights = extract_assignment_insights(state.document_text, state.transcript_text)
     try:
         dimension_results = _build_heuristic_dimensions(
             definition=definition,
             document_text=state.document_text,
             transcript_text=state.transcript_text,
             transcript_present=state.transcript_present,
+            assignment_insights=assignment_insights,
         )
         scored = [d for d in dimension_results if d["score"] is not None]
-        strengths, improvements = _build_takeaways(scored)
+        strengths, improvements = _build_takeaways(scored, assignment_insights=assignment_insights)
         overall_comment = _build_overall_comment(
             report_type=state.report_type,
             total_score=None,
             strengths=strengths,
             improvements=improvements,
             transcript_present=state.transcript_present,
+            assignment_insights=assignment_insights,
         )
         state.dimension_results = dimension_results
         state.strengths = strengths
@@ -187,12 +199,19 @@ def assemble_result(state: EvalState) -> EvalState:
             result = state.assembled_result
         else:
             # Heuristic path: assemble from state fields
+            assignment_insights = extract_assignment_insights(
+                state.document_text,
+                state.transcript_text,
+            )
             result = _assemble_result(
                 report_type=state.report_type,
                 metadata=state.metadata,
                 transcript_present=state.transcript_present,
                 dimension_results=state.dimension_results,
                 overall_comment=state.overall_comment,
+                report_strengths=state.strengths or None,
+                report_improvements=state.improvements or None,
+                assignment_insights=assignment_insights,
             )
 
         # Enrich with user / session / export metadata

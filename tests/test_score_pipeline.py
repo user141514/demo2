@@ -218,6 +218,54 @@ class ScorePipelineTestCase(unittest.TestCase):
         self.assertIn("材料", first_evidence)
         self.assertIn("相关", first_evidence)
 
+    def test_heuristic_comments_reference_assignment_specific_signals(self):
+        from scoring_app.scoring import score_submission
+
+        document_text = (
+            "星链计划背景下，学员选择扬州LTP钢材发料准确性提升作为温故案例。"
+            "项目使用RACI矩阵明确生产中心、ME、MBA、IT四方分工，推进订单一致、定额审批、采购录库、仓库抽查和系统开发。"
+            "差异率小于20%的完工车占比从38%提升至75%，后续反馈达到80%。"
+            "知新课题选择东莞LTP中心CCC指标降低，当前52天，目标46天以内。"
+            "短期规划包含ERP库存数据导出、90天无流动物料识别、呆滞清单责任到人和每周追踪会。"
+            "复盘部分提到总结经验和认知迭代，但没有写清个人失误、能力短板或ASTRAL特质变化。"
+        )
+        transcript_text = (
+            "现场汇报按温故、知新、总结展开，逻辑较清晰。"
+            "但语速偏快，38%、75%、80%等关键数字说过即过，评委记录时间不足。"
+        )
+
+        with patch("scoring_app.scoring.live_score_submission", side_effect=RuntimeError("mock")):
+            payload = score_submission(
+                self.report_type,
+                document_text,
+                transcript_text,
+                {
+                    "name": "Insight Student",
+                    "org": "Delivery Team",
+                    "date": "2026-06-08",
+                    "course_session": "第二次课 · 组织协同",
+                    "note": "",
+                    "pdf_filename": "insight.pdf",
+                    "upload_path": "",
+                    "document_preview": document_text[:800],
+                },
+            )
+
+        combined_text = "\n".join(
+            [payload["overall_comment"]]
+            + payload["strengths"]
+            + payload["improvements"]
+            + [
+                "{}\n{}".format(item["evidence"], item["comment"])
+                for item in payload["dimensions"]
+            ]
+        )
+
+        for expected in ("RACI", "38%", "75%", "80%", "52天", "46天", "ERP库存数据", "语速偏快"):
+            self.assertIn(expected, combined_text)
+        for generic in ("表现较强", "支撑充分", "建议补充证据"):
+            self.assertNotIn(generic, combined_text)
+
     def test_garbled_inline_transcript_falls_back_to_uploaded_file_text(self):
         self._register_flow_user(email="fallback@example.com", display_name="Fallback User")
         captured = {}

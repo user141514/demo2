@@ -1,6 +1,7 @@
 import json
 import re
 
+from .assignment_insights import format_insight_section
 from .llm_config import load_llm_settings
 from .rules import load_knowledge_base_text, score_to_level
 
@@ -9,7 +10,13 @@ class LiveScoringError(Exception):
     pass
 
 
-def live_score_submission(report_type, definition, document_text, transcript_text):
+def live_score_submission(
+    report_type,
+    definition,
+    document_text,
+    transcript_text,
+    assignment_insights=None,
+):
     settings = load_llm_settings()
     if settings.get("llm_mode") != "live":
         raise LiveScoringError("Live LLM mode is disabled.")
@@ -27,7 +34,13 @@ def live_score_submission(report_type, definition, document_text, transcript_tex
         timeout=settings.get("llm_report_timeout_seconds") or 60,
     )
 
-    prompt = _build_user_prompt(report_type, definition, document_text, transcript_text)
+    prompt = _build_user_prompt(
+        report_type,
+        definition,
+        document_text,
+        transcript_text,
+        assignment_insights=assignment_insights,
+    )
     response = client.chat.completions.create(
         model=settings["openai_model"],
         temperature=0.2,
@@ -73,7 +86,13 @@ def _build_system_prompt():
     )
 
 
-def _build_user_prompt(report_type, definition, document_text, transcript_text):
+def _build_user_prompt(
+    report_type,
+    definition,
+    document_text,
+    transcript_text,
+    assignment_insights=None,
+):
     dimension_lines = []
     for item in definition["dimensions"]:
         dimension_lines.append(
@@ -90,6 +109,7 @@ def _build_user_prompt(report_type, definition, document_text, transcript_text):
     knowledge_base_text = load_knowledge_base_text(definition)
     knowledge_base_section = knowledge_base_text or "未配置课程专用评分标准，请仅按维度清单和通用锚定规则评分。"
     transcript_section = transcript_text.strip() or "未提供"
+    insight_section = format_insight_section(assignment_insights or {})
     return """请对以下{report_type}材料进行逐维度评分，并把输出内容写成可直接进入正式评估报告的文字。
 
 评分要求：
@@ -124,9 +144,14 @@ def _build_user_prompt(report_type, definition, document_text, transcript_text):
 9. 输出风格对齐正式评估报告：少用“当前材料支撑较充分”这类模板句，多写具体对象，例如战略背景、RACI/5WHY/逻辑树等工具、百分比/天数/阶段数据、跨部门角色、现场表达节奏。
 10. 维度文字采用“优势亮点 + 改进空间”的二段逻辑：肯定必须具体，批评必须可执行。复盘类维度要追问个人失误、能力短板、认知变化和行为改变；规划类维度要追问资源、数据权限、里程碑和协同机制；展现类维度要区分书面材料和现场表达。
 11. improvements 是最终结论建议，不要只重复低分维度名称；写成类似“补充结构化反思页，直面个人不足”“将关键量化成效做成视觉冲击页”“完善资源规划与跨部门协同安排”的动作建议。
+12. 每条 overall_comment、strengths、improvements、evidence、comment 都必须尽量绑定至少一个作业信号，例如“RACI 分工”“52天降至46天”“38%→75%→80%”“ERP库存数据”“语速偏快”；如果材料没有对应信号，要明确写出“缺少案例/数据/反思/资源规划”，不得虚构。
 
 维度清单：
 {dimension_lines}
+
+---系统预提取的可点评作业信号开始---
+{insight_section}
+---系统预提取的可点评作业信号结束---
 
 ---课程专用评分标准开始---
 {knowledge_base_section}
@@ -142,6 +167,7 @@ def _build_user_prompt(report_type, definition, document_text, transcript_text):
 """.format(
         report_type=report_type,
         dimension_lines="\n".join(dimension_lines),
+        insight_section=insight_section,
         knowledge_base_section=knowledge_base_section,
         document_text=document_text[:14000],
         transcript_text=transcript_section[:8000],
