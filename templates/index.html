@@ -127,6 +127,14 @@
           <span>评分历史</span>
           <span class="nav-badge" id="history-count">0</span>
         </button>
+        <button class="nav-item" type="button" data-page="leadership-model">
+          <span class="nav-icon" aria-hidden="true">◇</span>
+          <span>领导力建模</span>
+        </button>
+        <button class="nav-item" type="button" data-page="leadership-models">
+          <span class="nav-icon" aria-hidden="true">☰</span>
+          <span>建模历史</span>
+        </button>
       </nav>
       <div class="sidebar-footer">
         <span>登录态受同源 Cookie 保护</span>
@@ -404,9 +412,179 @@
           </div>
         </section>
       </section>
+
+      <section class="page" id="page-leadership-model" aria-labelledby="leadership-title">
+        <div class="page-head">
+          <div class="eyebrow"></div>
+          <h1 id="leadership-title">领导力建模智能体</h1>
+          <p>围绕单一管理层级完成建模背景、维度框架、定位描述、行为锚定与白皮书导出。</p>
+        </div>
+
+        <div class="leadership-progress panel" id="leadership-workflow"></div>
+        <div class="inline-alert" id="leadership-message" hidden></div>
+
+        <div class="grid two-col">
+          <section class="panel">
+            <div class="panel-head">
+              <div>
+                <h2>M01 建模信息采集</h2>
+                <p>用于生成后续所有模块的结构化背景摘要。</p>
+              </div>
+            </div>
+            <div class="panel-body">
+              <form id="leadership-form" class="form-grid" autocomplete="off">
+                <label class="field">
+                  <span>公司名称 <em>*</em></span>
+                  <input type="text" name="company_name" placeholder="例如：中集车辆">
+                </label>
+                <label class="field">
+                  <span>行业 / 业务类型</span>
+                  <input type="text" name="industry" placeholder="例如：高端制造">
+                </label>
+                <label class="field full">
+                  <span>业务模式简述</span>
+                  <input type="text" name="business_type" placeholder="一句话说明主营业务和经营模式">
+                </label>
+                <label class="field">
+                  <span>公司规模</span>
+                  <input type="text" name="company_size" placeholder="例如：上市公司，5000人以上">
+                </label>
+                <label class="field">
+                  <span>建模对象 <em>*</em></span>
+                  <input type="text" name="target_group" placeholder="例如：中层管理者">
+                </label>
+                <label class="field full">
+                  <span>层级职责定位</span>
+                  <textarea name="role_positioning" rows="3" placeholder="说明该层级承担的核心管理责任"></textarea>
+                </label>
+                <label class="field full">
+                  <span>当前战略重点</span>
+                  <textarea name="strategy_keywords" rows="3" placeholder="每行一个关键词，如：星链计划、海外增长、数字化运营"></textarea>
+                </label>
+                <label class="field full">
+                  <span>主要管理痛点</span>
+                  <textarea name="management_pains" rows="3" placeholder="每行一个痛点，如：跨部门协同慢、库存数据割裂"></textarea>
+                </label>
+                <label class="field full">
+                  <span>优秀管理者典型表现</span>
+                  <textarea name="excellent_behaviors" rows="3" placeholder="每行一个可观察表现"></textarea>
+                </label>
+                <label class="field full">
+                  <span>优秀与普通的关键差异</span>
+                  <textarea name="differentiation_summary" rows="3" placeholder="用1-2句话概括差异"></textarea>
+                </label>
+                <label class="field full">
+                  <span>标准库参照</span>
+                  <textarea name="standard_refs" rows="2" placeholder="例如：美世领导力模型、DDI领导力模型、富兰克林柯维领导力模型"></textarea>
+                </label>
+                <label class="dropzone full" id="leadership-source-zone">
+                  <input type="file" name="source_file" id="leadership-source-file" accept=".pdf,.docx,.txt,.md,application/pdf,text/plain">
+                  <div class="dropzone-icon alt">DOC</div>
+                  <div class="dropzone-title">可选上传战略文档 / JD / 绩效报告</div>
+                  <div class="dropzone-hint">支持 PDF、DOCX、TXT、Markdown，单文件 ≤ 20MB</div>
+                  <div class="file-meta" id="leadership-source-meta">尚未选择文件</div>
+                </label>
+                <div class="action-row full">
+                  <button class="btn btn-primary" type="submit">创建建模草稿</button>
+                  <button class="btn btn-secondary" type="button" id="leadership-reset">清空</button>
+                </div>
+              </form>
+            </div>
+          </section>
+
+          <aside class="panel leadership-stage-panel">
+            <div class="panel-head">
+              <div>
+                <h2>阶段操作</h2>
+                <p>每一步生成后可先编辑，再确认进入下一阶段。</p>
+              </div>
+            </div>
+            <div class="panel-body stacked">
+              <div class="leadership-stage-block">
+                <div class="side-title">当前模型</div>
+                <h3 id="leadership-current-title">尚未创建</h3>
+                <p id="leadership-current-meta">填写左侧信息后开始。</p>
+              </div>
+              <div class="action-row">
+                <button class="btn btn-primary" type="button" id="leadership-generate-dimensions">生成维度</button>
+                <button class="btn btn-secondary" type="button" id="leadership-save-dimensions">确认维度</button>
+              </div>
+              <div class="action-row">
+                <button class="btn btn-primary" type="button" id="leadership-generate-descriptions">生成描述</button>
+                <button class="btn btn-secondary" type="button" id="leadership-save-descriptions">确认描述</button>
+              </div>
+              <div class="action-row">
+                <button class="btn btn-primary" type="button" id="leadership-generate-anchors">生成行为锚定</button>
+                <button class="btn btn-secondary" type="button" id="leadership-save-anchors">确认锚定</button>
+              </div>
+              <div class="action-row">
+                <button class="btn btn-secondary" type="button" id="leadership-export-pdf">导出 PDF</button>
+                <button class="btn btn-primary" type="button" id="leadership-export-docx">导出 Word</button>
+              </div>
+            </div>
+          </aside>
+        </div>
+
+        <section class="panel leadership-output">
+          <div class="panel-head">
+            <div>
+              <h2>模型总览</h2>
+              <p>按 M02-M04 展示维度、定位描述和行为锚定。</p>
+            </div>
+          </div>
+          <div class="panel-body stacked">
+            <div id="leadership-context" class="leadership-context empty-state">
+              <div class="empty-icon">◇</div>
+              <h3>等待建模信息</h3>
+              <p>创建草稿后会展示建模背景摘要。</p>
+            </div>
+            <div id="leadership-dimensions" class="leadership-list"></div>
+            <div id="leadership-descriptions" class="leadership-list"></div>
+            <div id="leadership-anchors" class="leadership-list"></div>
+          </div>
+        </section>
+      </section>
+
+      <section class="page" id="page-leadership-models" aria-labelledby="leadership-history-title">
+        <div class="page-head">
+          <div class="eyebrow"></div>
+          <h1 id="leadership-history-title">建模历史</h1>
+        </div>
+        <section class="panel table-panel">
+          <div class="panel-head">
+            <div>
+              <h2>领导力模型列表</h2>
+            </div>
+            <button class="btn btn-ghost btn-sm" type="button" id="leadership-history-reload">重新加载</button>
+          </div>
+          <div class="panel-body">
+            <div class="table-wrap">
+              <table class="history-table">
+                <thead>
+                  <tr>
+                    <th>模型名称</th>
+                    <th>公司</th>
+                    <th>对象</th>
+                    <th>状态</th>
+                    <th>更新时间</th>
+                    <th>操作</th>
+                  </tr>
+                </thead>
+                <tbody id="leadership-history-tbody"></tbody>
+              </table>
+            </div>
+            <div class="empty-state" id="leadership-history-empty" hidden>
+              <div class="empty-icon">◇</div>
+              <h3>暂无建模记录</h3>
+              <p>创建第一个领导力模型后会显示在这里。</p>
+            </div>
+          </div>
+        </section>
+      </section>
     </main>
   </div>
 
   <script src="/static/app.js"></script>
+  <script src="/static/leadership.js"></script>
 </body>
 </html>

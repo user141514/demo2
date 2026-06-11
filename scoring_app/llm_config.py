@@ -4,8 +4,8 @@ from functools import lru_cache
 from pathlib import Path
 
 
-DEFAULT_KEY_FILE = Path(os.getenv("SCORING_APP_KEY_FILE", r"E:\company_work\demo\mykey.py"))
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
+DEFAULT_KEY_FILE = Path(os.getenv("SCORING_APP_KEY_FILE", str(PROJECT_ROOT / "mykey.py")))
 DEFAULT_DOTENV_FILE = PROJECT_ROOT / ".env"
 
 DEFAULT_SETTINGS = {

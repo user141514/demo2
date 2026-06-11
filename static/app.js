@@ -603,6 +603,8 @@ function showPage(page) {
     score: ["新建评分", "提交汇报材料，生成结构化评分报告"],
     result: ["评分结果", "查看结构化评分结果、维度明细与导出内容"],
     history: ["评分历史", "查看历史记录并回看任意报告详情"],
+    "leadership-model": ["领导力建模", "按采集、维度、描述、行为、导出完成模型构建"],
+    "leadership-models": ["建模历史", "查看并继续编辑历史领导力模型"],
   };
   const config = pages[page] || ["智能体评分系统", ""];
   els.topbarTitle.textContent = config[0];

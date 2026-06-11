@@ -56,6 +56,11 @@ class AppShellTestCase(unittest.TestCase):
         self.assertIn("conclusion-card conclusion-improvements", index_html)
         self.assertIn("<th>对应课次</th>", index_html)
         self.assertNotIn("<th>人工均分（待接入）</th>", index_html)
+        self.assertIn("领导力建模", index_html)
+        self.assertIn("建模历史", index_html)
+        self.assertIn("id=\"page-leadership-model\"", index_html)
+        self.assertIn("id=\"page-leadership-models\"", index_html)
+        self.assertIn("/static/leadership.js", index_html)
 
         health_response = self.client.get("/api/health")
         self.assertEqual(health_response.status_code, 200)

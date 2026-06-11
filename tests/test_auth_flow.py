@@ -96,6 +96,8 @@ class AuthFlowTestCase(unittest.TestCase):
             self.client.get("/api/scores/missing-id/export?format=md").status_code,
             401,
         )
+        self.assertEqual(self.client.get("/api/leadership-models").status_code, 401)
+        self.assertEqual(self.client.post("/api/leadership-models").status_code, 401)
 
     def test_cross_user_history_detail_and_export_isolation(self):
         user_a = self.register_user("alice@example.com", "Alice")
