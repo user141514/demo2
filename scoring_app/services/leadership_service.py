@@ -7,10 +7,25 @@ from ..leadership_export import (
     build_leadership_docx_bytes,
     build_leadership_pdf_bytes,
 )
+from ..leadership_contract import (
+    context_summary,
+    missing_context_fields,
+    normalize_anchor,
+    normalize_anchors,
+    normalize_description,
+    normalize_descriptions,
+    normalize_dimension_candidates,
+    normalize_dimensions,
+)
 from ..leadership_generation import (
+    apply_context_message,
     build_anchor_drafts,
     build_description_drafts,
+    build_dimension_candidates,
     build_dimension_drafts,
+    build_single_anchor_text,
+    build_single_description_draft,
+    merge_source_text,
     parse_context_from_form,
 )
 from ..leadership_llm import generate_stage_with_llm
@@ -29,24 +44,23 @@ from ..utils import now_iso
 def create_model(form, files, user_id):
     source_file, source_text = extract_leadership_source_file(files.get("source_file"))
     context = parse_context_from_form(form, source_text)
-    if not context.get("company_name"):
-        raise ApplicationError("missing_company_name", "公司名称不能为空。", 400)
-    if not context.get("target_group"):
-        raise ApplicationError("missing_target_group", "建模对象层级/群体不能为空。", 400)
+    is_ready_context = bool(context.get("company_name") and context.get("target_group"))
+    context["summary_confirmed"] = is_ready_context
+    context["context_summary"] = context_summary(context)
 
     model_id = uuid4().hex
     created_at = now_iso()
     title = "{} {} 领导力模型".format(
-        context.get("company_name"),
-        context.get("target_group"),
+        context.get("company_name") or "未命名企业",
+        context.get("target_group") or "待定对象",
     )
     record = {
         "model_id": model_id,
         "user_id": user_id,
         "title": title,
         "context": context,
-        "status": "context_ready",
-        "current_step": "dimensions",
+        "status": "context_ready" if is_ready_context else "context_collecting",
+        "current_step": "dimensions" if is_ready_context else "context",
         "created_at": created_at,
         "updated_at": created_at,
     }
@@ -63,6 +77,83 @@ def create_model(form, files, user_id):
         )
     create_leadership_model(record, artifacts=artifacts)
     return get_model(model_id, user_id)
+
+
+def add_source_file(model_id, user_id, files):
+    model = _require_model(model_id, user_id)
+    source_file, source_text = extract_leadership_source_file(files.get("source_file"))
+    if source_file is None:
+        raise ApplicationError("missing_source_file", "请上传 PDF、DOCX、TXT 或 Markdown 文件。", 400)
+    created_at = now_iso()
+    store_leadership_artifact(
+        model_id,
+        {
+            "artifact_kind": "source_file_{}".format(uuid4().hex[:10]),
+            "filename": source_file["filename"],
+            "mimetype": source_file["mimetype"],
+            "content_bytes": source_file["content_bytes"],
+            "created_at": created_at,
+        },
+    )
+    context = merge_source_text(model["context"], source_text, source_file["filename"])
+    return _update_and_return(
+        model_id,
+        user_id,
+        {
+            "context": context,
+            "status": "context_pending_confirm" if not context.get("summary_confirmed") else model["status"],
+            "current_step": "context" if not context.get("summary_confirmed") else model["current_step"],
+        },
+    )
+
+
+def handle_context_message(model_id, user_id, payload):
+    model = _require_model(model_id, user_id)
+    message = (payload.get("message") or "").strip()
+    if not message:
+        raise ApplicationError("missing_message", "请先输入需要记录的信息。", 400)
+    context, assistant_message, next_field = apply_context_message(
+        model["context"],
+        payload.get("field"),
+        message,
+    )
+    updated = _update_and_return(
+        model_id,
+        user_id,
+        {"context": context, "status": "context_pending_confirm", "current_step": "context"},
+    )
+    updated["assistant_message"] = assistant_message
+    updated["next_question"] = next_field
+    return updated
+
+
+def confirm_context(model_id, user_id):
+    model = _require_model(model_id, user_id)
+    context = dict(model["context"] or {})
+    context["summary_confirmed"] = True
+    context["missing_fields"] = missing_context_fields(context)
+    context["context_summary"] = context_summary(context)
+    candidates = _generate_dimension_candidates(context)
+    context["dimension_candidates"] = candidates
+    return _update_and_return(
+        model_id,
+        user_id,
+        {
+            "title": "{} {} 领导力模型".format(
+                context.get("company_name") or "未命名企业",
+                context.get("target_group") or "待定对象",
+            ),
+            "context": context,
+            "dimensions": candidates["recommended"],
+            "dimensions_confirmed": False,
+            "descriptions": [],
+            "descriptions_confirmed": False,
+            "anchors": [],
+            "anchors_confirmed": False,
+            "status": "dimensions_pending_review",
+            "current_step": "dimensions",
+        },
+    )
 
 
 def list_models(user_id):
@@ -82,17 +173,15 @@ def get_model(model_id, user_id):
 
 def generate_dimensions(model_id, user_id):
     model = _require_model(model_id, user_id)
-    dimensions = _generate_stage(
-        "dimensions",
-        {"context": model["context"]},
-        lambda: build_dimension_drafts(model["context"]),
-        _validate_dimensions,
-    )
+    candidates = _generate_dimension_candidates(model["context"])
+    context = dict(model["context"] or {})
+    context["dimension_candidates"] = candidates
     return _update_and_return(
         model_id,
         user_id,
         {
-            "dimensions": dimensions,
+            "context": context,
+            "dimensions": candidates["recommended"],
             "dimensions_confirmed": False,
             "descriptions": [],
             "descriptions_confirmed": False,
@@ -105,7 +194,7 @@ def generate_dimensions(model_id, user_id):
 
 
 def save_dimensions(model_id, user_id, payload):
-    dimensions = _validate_dimensions(payload.get("dimensions"))
+    dimensions = _validate_dimensions(payload.get("dimensions"), min_count=3)
     return _update_and_return(
         model_id,
         user_id,
@@ -130,7 +219,7 @@ def generate_descriptions(model_id, user_id):
         "descriptions",
         {"context": model["context"], "dimensions": model["dimensions"]},
         lambda: build_description_drafts(model["context"], model["dimensions"]),
-        lambda value: _validate_list(value, "descriptions"),
+        lambda value: _validate_descriptions(value, model["dimensions"]),
     )
     return _update_and_return(
         model_id,
@@ -147,7 +236,8 @@ def generate_descriptions(model_id, user_id):
 
 
 def save_descriptions(model_id, user_id, payload):
-    descriptions = _validate_list(payload.get("descriptions"), "descriptions")
+    model = _require_model(model_id, user_id)
+    descriptions = _validate_descriptions(payload.get("descriptions"), model["dimensions"])
     return _update_and_return(
         model_id,
         user_id,
@@ -174,7 +264,7 @@ def generate_anchors(model_id, user_id):
             "descriptions": model["descriptions"],
         },
         lambda: build_anchor_drafts(model["context"], model["descriptions"]),
-        _validate_anchors,
+        lambda value: _validate_anchors(value, model["dimensions"]),
     )
     return _update_and_return(
         model_id,
@@ -189,7 +279,8 @@ def generate_anchors(model_id, user_id):
 
 
 def save_anchors(model_id, user_id, payload):
-    anchors = _validate_anchors(payload.get("anchors"))
+    model = _require_model(model_id, user_id)
+    anchors = _validate_anchors(payload.get("anchors"), model["dimensions"])
     return _update_and_return(
         model_id,
         user_id,
@@ -198,6 +289,57 @@ def save_anchors(model_id, user_id, payload):
             "anchors_confirmed": True,
             "status": "ready_to_export",
             "current_step": "export",
+        },
+    )
+
+
+def regenerate_description(model_id, user_id, dimension_id, payload):
+    model = _require_model(model_id, user_id)
+    dimensions = normalize_dimensions(model["dimensions"])
+    dimension = _find_dimension(dimensions, dimension_id)
+    if dimension is None:
+        raise ApplicationError("dimension_not_found", "未找到对应维度。", 404)
+    descriptions = normalize_descriptions(model["descriptions"], dimensions)
+    replacement = build_single_description_draft(
+        model["context"],
+        dimension,
+        payload.get("direction") or "",
+    )
+    descriptions = _replace_by_dimension_id(descriptions, dimension_id, replacement)
+    return _update_and_return(
+        model_id,
+        user_id,
+        {
+            "descriptions": descriptions,
+            "descriptions_confirmed": False,
+            "status": "descriptions_pending_review",
+            "current_step": "descriptions",
+        },
+    )
+
+
+def regenerate_anchor(model_id, user_id, anchor_id, payload):
+    model = _require_model(model_id, user_id)
+    dimensions = normalize_dimensions(model["dimensions"])
+    anchors = normalize_anchors(model["anchors"], dimensions)
+    target = _locate_anchor(anchors, anchor_id)
+    if target is None:
+        raise ApplicationError("anchor_not_found", "未找到对应行为锚定。", 404)
+    anchor, level, index = target
+    anchor["anchors"][level][index]["text"] = build_single_anchor_text(
+        payload.get("level") or level,
+        payload.get("direction") or "",
+    )
+    updated_anchor = normalize_anchor(anchor)
+    anchors = _replace_by_dimension_id(anchors, updated_anchor["dimension_id"], updated_anchor)
+    return _update_and_return(
+        model_id,
+        user_id,
+        {
+            "anchors": anchors,
+            "anchors_confirmed": False,
+            "status": "anchors_pending_review",
+            "current_step": "anchors",
         },
     )
 
@@ -218,11 +360,12 @@ def build_model_export(model_id, user_id, export_format):
             "mimetype": cached["mimetype"],
         }
 
+    normalized = _normalized_model(model)
     if export_format == "docx":
-        content = build_leadership_docx_bytes(model)
+        content = build_leadership_docx_bytes(normalized)
         mimetype = DOCX_MIMETYPE
     else:
-        content = build_leadership_pdf_bytes(model)
+        content = build_leadership_pdf_bytes(normalized)
         mimetype = "application/pdf"
 
     filename = "{}.{}".format(_safe_filename(model["title"]), export_format)
@@ -263,17 +406,19 @@ def _require_model(model_id, user_id):
 
 
 def _detail_payload(model):
+    normalized = _normalized_model(model)
     workflow = build_workflow_state(model)
     current_step = infer_current_step(model)
     return {
         "model_id": model["model_id"],
-        "title": model["title"],
+        "title": normalized["title"],
         "status": model["status"],
         "current_step": current_step,
-        "context": model["context"],
-        "dimensions": model["dimensions"],
-        "descriptions": model["descriptions"],
-        "anchors": model["anchors"],
+        "context": normalized["context"],
+        "dimension_candidates": normalized["dimension_candidates"],
+        "dimensions": normalized["dimensions"],
+        "descriptions": normalized["descriptions"],
+        "anchors": normalized["anchors"],
         "workflow": workflow,
         "export_urls": _export_urls(model),
         "created_at": model["created_at"],
@@ -282,11 +427,12 @@ def _detail_payload(model):
 
 
 def _summary_payload(model):
+    context = model["context"] or {}
     return {
         "model_id": model["model_id"],
         "title": model["title"],
-        "company_name": model["context"].get("company_name") or "",
-        "target_group": model["context"].get("target_group") or "",
+        "company_name": context.get("company_name") or "",
+        "target_group": context.get("target_group") or "",
         "status": model["status"],
         "current_step": infer_current_step(model),
         "workflow": build_workflow_state(model),
@@ -304,33 +450,45 @@ def _export_urls(model):
     }
 
 
-def _validate_dimensions(value):
+def _generate_dimension_candidates(context):
+    try:
+        generated = generate_stage_with_llm("dimensions", {"context": context})
+        candidates = normalize_dimension_candidates(generated)
+        if candidates["recommended"] and candidates["alternatives"]:
+            return candidates
+    except Exception:
+        pass
+    return build_dimension_candidates(context)
+
+
+def _validate_dimensions(value, min_count=4):
     dimensions = _validate_list(value, "dimensions")
-    if len(dimensions) < 4 or len(dimensions) > 8:
-        raise ApplicationError("invalid_dimensions", "维度数量必须为 4-8 个。", 400)
-    normalized = []
-    for index, item in enumerate(dimensions, 1):
+    normalized = normalize_dimensions(dimensions)
+    if len(normalized) < min_count or len(normalized) > 8:
+        raise ApplicationError("invalid_dimensions", "维度数量必须为 {}-8 个。".format(min_count), 400)
+    for item in normalized:
         if not item.get("name") or not item.get("definition"):
             raise ApplicationError("invalid_dimensions", "维度名称和定义不能为空。", 400)
-        normalized.append(
-            {
-                "id": int(item.get("id") or index),
-                "name": str(item.get("name")).strip(),
-                "definition": str(item.get("definition")).strip(),
-                "sources": item.get("sources") if isinstance(item.get("sources"), list) else [],
-                "priority": str(item.get("priority") or "重要维度").strip(),
-            }
-        )
     return normalized
 
 
-def _validate_anchors(value):
+def _validate_descriptions(value, dimensions):
+    descriptions = _validate_list(value, "descriptions")
+    normalized = normalize_descriptions(descriptions, normalize_dimensions(dimensions))
+    for item in normalized:
+        if not item.get("description"):
+            raise ApplicationError("invalid_descriptions", "维度描述不能为空。", 400)
+    return normalized
+
+
+def _validate_anchors(value, dimensions=None):
     anchors = _validate_list(value, "anchors")
-    for item in anchors:
-        for key in ("excellent", "pass", "negative"):
-            if not isinstance(item.get(key), list) or not item.get(key):
+    normalized = normalize_anchors(anchors, normalize_dimensions(dimensions or []))
+    for item in normalized:
+        for key in ("excellent", "standard", "below"):
+            if not item.get("anchors", {}).get(key):
                 raise ApplicationError("invalid_anchors", "行为锚定必须包含三组行为。", 400)
-    return anchors
+    return normalized
 
 
 def _validate_list(value, field_name):
@@ -341,3 +499,59 @@ def _validate_list(value, field_name):
 
 def _safe_filename(value):
     return "".join(char if char.isalnum() or char in "-_." else "_" for char in value)[:80]
+
+
+def _normalized_model(model):
+    context = dict(model.get("context") or {})
+    context["missing_fields"] = context.get("missing_fields") or missing_context_fields(context)
+    context["context_summary"] = context.get("context_summary") or context_summary(context)
+    dimensions = normalize_dimensions(model.get("dimensions") or [])
+    descriptions = normalize_descriptions(model.get("descriptions") or [], dimensions)
+    anchors = normalize_anchors(model.get("anchors") or [], dimensions)
+    candidates = normalize_dimension_candidates(
+        context.get("dimension_candidates") or {"recommended": dimensions, "alternatives": []}
+    )
+    return {
+        **model,
+        "title": model.get("title") or "{} {} 领导力模型".format(
+            context.get("company_name") or "未命名企业",
+            context.get("target_group") or "待定对象",
+        ),
+        "context": context,
+        "dimension_candidates": candidates,
+        "dimensions": dimensions,
+        "descriptions": descriptions,
+        "anchors": anchors,
+    }
+
+
+def _find_dimension(dimensions, dimension_id):
+    wanted = str(dimension_id)
+    for item in dimensions:
+        if str(item.get("id")) == wanted:
+            return item
+    return None
+
+
+def _replace_by_dimension_id(items, dimension_id, replacement):
+    wanted = str(dimension_id)
+    updated = []
+    replaced = False
+    for item in items:
+        if str(item.get("dimension_id")) == wanted:
+            updated.append(replacement)
+            replaced = True
+        else:
+            updated.append(item)
+    if not replaced:
+        updated.append(replacement)
+    return updated
+
+
+def _locate_anchor(anchors, anchor_id):
+    for anchor in anchors:
+        for level, items in (anchor.get("anchors") or {}).items():
+            for index, item in enumerate(items):
+                if item.get("id") == anchor_id:
+                    return anchor, level, index
+    return None

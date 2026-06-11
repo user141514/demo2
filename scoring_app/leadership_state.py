@@ -9,7 +9,9 @@ STEPS = [
 
 def build_workflow_state(model):
     """Derive the visible state chain from persisted stage payloads."""
-    has_context = bool(model.get("context"))
+    context = model.get("context") or {}
+    has_context = bool(context)
+    context_done = bool(context.get("summary_confirmed") or model.get("status") == "context_ready")
     has_dimensions = bool(model.get("dimensions"))
     dimensions_done = bool(model.get("dimensions_confirmed"))
     has_descriptions = bool(model.get("descriptions"))
@@ -20,16 +22,16 @@ def build_workflow_state(model):
     states = {
         "context": _state(
             "context",
-            has_context,
+            context_done,
             has_context,
             True,
-            "已采集" if has_context else "待采集",
+            "已确认" if context_done else ("待确认" if has_context else "待采集"),
         ),
         "dimensions": _state(
             "dimensions",
             dimensions_done,
             has_dimensions,
-            has_context,
+            context_done,
             "已确认" if dimensions_done else ("待确认" if has_dimensions else "待生成"),
         ),
         "descriptions": _state(
@@ -61,8 +63,6 @@ def build_workflow_state(model):
 
 def infer_current_step(model):
     for item in build_workflow_state(model):
-        if item["key"] == "context":
-            continue
         if item["state"] in {"available", "pending-review"}:
             return item["key"]
     return "export"

@@ -168,7 +168,13 @@ function cacheElements() {
 
 function bindEvents() {
   document.querySelectorAll(".nav-item").forEach((button) => {
-    button.addEventListener("click", () => showPage(button.dataset.page));
+    button.addEventListener("click", () => {
+      if (button.dataset.href) {
+        window.location.href = button.dataset.href;
+        return;
+      }
+      showPage(button.dataset.page);
+    });
   });
   document.querySelectorAll("[data-auth-mode]").forEach((button) => {
     button.addEventListener("click", () => switchAuthMode(button.dataset.authMode));

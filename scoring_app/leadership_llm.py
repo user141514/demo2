@@ -37,7 +37,17 @@ def generate_stage_with_llm(stage, model_data):
     )
     content = (response.choices[0].message.content or "").strip()
     payload = _extract_json(content)
-    key = {"dimensions": "dimensions", "descriptions": "descriptions", "anchors": "anchors"}[stage]
+    if stage == "dimensions":
+        if isinstance(payload.get("recommended"), list):
+            return {
+                "recommended": payload.get("recommended") or [],
+                "alternatives": payload.get("alternatives") or [],
+            }
+        items = payload.get("dimensions")
+        if isinstance(items, list) and items:
+            return {"recommended": items, "alternatives": payload.get("alternatives") or []}
+        raise LeadershipLLMError("LLM output missing recommended dimensions.")
+    key = {"descriptions": "descriptions", "anchors": "anchors"}[stage]
     items = payload.get(key)
     if not isinstance(items, list) or not items:
         raise LeadershipLLMError("LLM output missing {} list.".format(key))

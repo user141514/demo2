@@ -161,6 +161,108 @@ class LeadershipModelingTestCase(unittest.TestCase):
         self.assertEqual(self.client.get("/api/leadership-models").status_code, 401)
         self.assertEqual(self.client.post("/api/leadership-models").status_code, 401)
 
+    def test_conversational_flow_candidates_regeneration_and_compatibility(self):
+        create_response = self.client.post(
+            "/api/leadership-models",
+            data={"company_name": "中集车辆"},
+            content_type="multipart/form-data",
+        )
+        self.assertEqual(create_response.status_code, 201)
+        payload = create_response.get_json()
+        model_id = payload["model_id"]
+        self.assertEqual(payload["current_step"], "context")
+
+        upload_response = self.client.post(
+            "/api/leadership-models/{}/source-files".format(model_id),
+            data={
+                "source_file": (
+                    BytesIO("战略文档包含ERP库存数据、跨部门协同和海外增长。".encode("utf-8")),
+                    "strategy.txt",
+                )
+            },
+            content_type="multipart/form-data",
+        )
+        self.assertEqual(upload_response.status_code, 200)
+        self.assertIn("ERP", upload_response.get_json()["context"]["document_keywords"])
+
+        for field, message in [
+            ("industry", "高端制造与商用车供应链"),
+            ("company_size", "上市公司，5000人以上"),
+            ("strategy_keywords", "星链计划；海外增长；数字化运营"),
+            ("management_pains", "跨部门协同慢；库存数据割裂"),
+            ("target_group", "中层管理者"),
+            ("excellent_behaviors", "主动拆解目标；跨部门推动资源；用数据复盘结果"),
+        ]:
+            message_response = self.client.post(
+                "/api/leadership-models/{}/context/message".format(model_id),
+                json={"field": field, "message": message},
+            )
+            self.assertEqual(message_response.status_code, 200)
+            self.assertIn("assistant_message", message_response.get_json())
+
+        confirm_response = self.client.post(
+            "/api/leadership-models/{}/context/confirm".format(model_id)
+        )
+        self.assertEqual(confirm_response.status_code, 200)
+        confirmed = confirm_response.get_json()
+        self.assertEqual(confirmed["current_step"], "dimensions")
+        self.assertIn("dimension_candidates", confirmed)
+        self.assertGreaterEqual(len(confirmed["dimension_candidates"]["recommended"]), 4)
+        self.assertGreaterEqual(len(confirmed["dimension_candidates"]["alternatives"]), 5)
+
+        selected_dimensions = confirmed["dimension_candidates"]["recommended"][:3]
+        save_dimensions = self.client.patch(
+            "/api/leadership-models/{}/dimensions".format(model_id),
+            json={"dimensions": selected_dimensions},
+        )
+        self.assertEqual(save_dimensions.status_code, 200)
+        self.assertEqual(len(save_dimensions.get_json()["dimensions"]), 3)
+
+        descriptions_response = self.client.post(
+            "/api/leadership-models/{}/descriptions:generate".format(model_id)
+        )
+        self.assertEqual(descriptions_response.status_code, 200)
+        descriptions_payload = descriptions_response.get_json()
+        first_description = descriptions_payload["descriptions"][0]
+        self.assertIn("description", first_description)
+        self.assertIn("quality_check", first_description)
+
+        dimension_id = first_description["dimension_id"]
+        regenerate_description = self.client.post(
+            "/api/leadership-models/{}/descriptions/{}:regenerate".format(model_id, dimension_id),
+            json={"direction": "更强调ERP库存数据和跨部门推进"},
+        )
+        self.assertEqual(regenerate_description.status_code, 200)
+        regenerated_description = regenerate_description.get_json()["descriptions"][0]
+        self.assertIn("ERP库存数据", regenerated_description["description"])
+
+        save_descriptions = self.client.patch(
+            "/api/leadership-models/{}/descriptions".format(model_id),
+            json={"descriptions": regenerate_description.get_json()["descriptions"]},
+        )
+        self.assertEqual(save_descriptions.status_code, 200)
+
+        anchors_response = self.client.post(
+            "/api/leadership-models/{}/anchors:generate".format(model_id)
+        )
+        self.assertEqual(anchors_response.status_code, 200)
+        anchors_payload = anchors_response.get_json()
+        first_anchor = anchors_payload["anchors"][0]
+        self.assertIn("anchors", first_anchor)
+        self.assertTrue(first_anchor["anchors"]["standard"])
+        self.assertTrue(first_anchor["anchors"]["below"])
+        self.assertTrue(first_anchor["pass"])
+        self.assertTrue(first_anchor["negative"])
+
+        anchor_id = first_anchor["anchors"]["standard"][0]["id"]
+        regenerate_anchor = self.client.post(
+            "/api/leadership-models/{}/anchors/{}:regenerate".format(model_id, anchor_id),
+            json={"direction": "补充跨部门周会节奏"},
+        )
+        self.assertEqual(regenerate_anchor.status_code, 200)
+        updated_anchor = regenerate_anchor.get_json()["anchors"][0]["anchors"]["standard"][0]
+        self.assertIn("跨部门周会", updated_anchor["text"])
+
     def test_leadership_prompt_contains_mvp_contract(self):
         from scoring_app.leadership_prompts import build_stage_prompt
 
@@ -173,12 +275,13 @@ class LeadershipModelingTestCase(unittest.TestCase):
             },
         )
 
-        self.assertIn("4-8 个领导力维度", prompt)
-        self.assertIn("来源依据", prompt)
+        self.assertIn("4-8 个推荐维度", prompt)
+        self.assertIn("5-10 个备选维度", prompt)
         self.assertIn("单一层级/群体", prompt)
         self.assertIn("行为动词开头", prompt)
-        self.assertIn("正向行为", prompt)
-        self.assertIn("负向行为", prompt)
+        self.assertIn("优秀", prompt)
+        self.assertIn("达标", prompt)
+        self.assertIn("不达标", prompt)
 
     def _register_user(self):
         response = self.client.post(

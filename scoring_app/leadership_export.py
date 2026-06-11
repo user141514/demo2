@@ -73,11 +73,11 @@ def _document_paragraphs(model):
             [
                 ("heading", "{} {}".format(dim_id, dimension.get("name") or "未命名维度")),
                 ("body", "维度定义：{}".format(dimension.get("definition") or "--")),
-                ("body", "定位要求：{}".format(desc.get("core_requirement") or "--")),
+                ("body", "定位描述：{}".format(desc.get("description") or desc.get("core_requirement") or "--")),
                 ("body", "价值贡献：{}".format(desc.get("value_contribution") or "--")),
-                ("body", "优秀行为：{}".format("；".join(anchor.get("excellent") or ["--"]))),
-                ("body", "达标行为：{}".format("；".join(anchor.get("pass") or ["--"]))),
-                ("body", "不达标表现：{}".format("；".join(anchor.get("negative") or ["--"]))),
+                ("body", "优秀行为：{}".format("；".join(_anchor_texts(anchor, "excellent") or ["--"]))),
+                ("body", "达标行为：{}".format("；".join(_anchor_texts(anchor, "standard") or anchor.get("pass") or ["--"]))),
+                ("body", "不达标表现：{}".format("；".join(_anchor_texts(anchor, "below") or anchor.get("negative") or ["--"]))),
             ]
         )
     paragraphs.extend(
@@ -107,6 +107,14 @@ def _background_text(context):
     if missing:
         text += " 信息缺口：{}。".format("、".join(missing))
     return text
+
+
+def _anchor_texts(anchor, level):
+    anchors = anchor.get("anchors") or {}
+    values = anchors.get(level)
+    if not values:
+        return anchor.get(level) or []
+    return [item.get("text") if isinstance(item, dict) else str(item) for item in values]
 
 
 def _document_xml(paragraphs):

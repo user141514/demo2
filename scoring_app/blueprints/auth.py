@@ -42,6 +42,11 @@ def me():
     return json_response({"user": user})
 
 
+@auth_bp.route("/status", methods=["GET"])
+def status():
+    return json_response({"user": current_user()})
+
+
 @auth_bp.route("/forgot-password", methods=["POST"])
 def forgot_password():
     try:
