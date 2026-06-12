@@ -6,6 +6,7 @@ from .assignment_insights import (
     extract_assignment_insights,
     extract_evidence_signal,
     select_dimension_signals,
+    summarize_missing_evidence,
 )
 from .core.text_quality import looks_like_garbled_text
 from .live_scoring import live_score_submission
@@ -103,7 +104,6 @@ def score_submission(report_type, document_text, transcript_text, metadata):
     result["llm_provider"] = llm_provider
     result["llm_model"] = llm_model
     return result
-
 
 def _assemble_result(
     report_type,
@@ -212,7 +212,7 @@ def _build_heuristic_dimensions(
             relevant_text = (
                 document_text if dimension["source_key"] == "document" else transcript_text
             )
-            score = _score_dimension(relevant_text, dimension)
+            score = _score_dimension(relevant_text, dimension, assignment_insights)
             result = {
                 "id": dimension["id"],
                 "name": dimension["name"],
@@ -238,23 +238,30 @@ def _build_heuristic_dimensions(
         dimension_results.append(result)
     return dimension_results
 
-
-def _score_dimension(text, dimension):
+def _score_dimension(text, dimension, assignment_insights=None):
     normalized = text.strip()
     keyword_hits = [kw for kw in dimension["keywords"] if kw in normalized]
     coverage = len(set(keyword_hits)) / float(len(dimension["keywords"]) or 1)
     length_bonus = min(len(normalized) / 1200.0, 1.0) * 0.7
     score = 4.1 + (coverage * 3.7) + length_bonus
+    completeness = _dimension_completeness(dimension, assignment_insights or {})
 
     if dimension["needs_numbers"] and re.search(r"\d+(\.\d+)?%?", normalized):
         score += 0.5
+    if completeness >= 4:
+        score += 1.0
+    elif completeness <= 1:
+        score -= 0.8
     if not keyword_hits and len(normalized) < 150:
         score -= 0.8
     if len(normalized) < 60:
         score -= 0.4
+    if dimension["source_key"] == "transcript" and not (assignment_insights or {}).get("expression"):
+        score = min(score - 0.7, 4.6)
+    if re.search(r"(没有说明|比较笼统|只说会继续沟通|缺少具体)", normalized):
+        score -= 0.7
     if looks_like_garbled_text(normalized):
         score = min(score, 4.2)
-
     score = max(3.8, min(9.0, score))
     return round(score, 1)
 
@@ -269,9 +276,8 @@ def _build_evidence(text, dimension, score, assignment_insights=None):
     ]
     focus = dimension["focus"]
     source = dimension["material_source"]
-    score_label = score_to_level(score)
     has_numbers = _has_relevant_number(readable_sentences, keyword_hits)
-    signals = select_dimension_signals(dimension, assignment_insights or {}, max_items=3)
+    signals = select_dimension_signals(dimension, assignment_insights or {}, max_items=4)
     signal_text = _join_signals(signals)
 
     if not readable_sentences:
@@ -289,31 +295,26 @@ def _build_evidence(text, dimension, score, assignment_insights=None):
         else:
             coverage_text = "形成初步覆盖"
         number_text = "，同时出现可追踪的量化信号" if has_numbers else ""
-        assignment_text = (
-            "作业中可见{}。".format(signal_text)
-            if signals
-            else "但当前材料缺少可直接落到该维度的案例、数据、行动或结果细节。"
-        )
+        assignment_text = "作业证据包括{}。".format(signal_text) if signals else _missing_sentence(assignment_insights)
         return _limit(
-            "优势亮点：{}材料围绕「{}」{}，可识别到{}等相关关键信号{}。{}这些内容说明汇报已经触及该维度的核心评价要点，因此可支撑{}水平的判断。".format(
+            "优势亮点：{}材料围绕「{}」{}，命中{}等相关评价点{}。{}这些证据能说明该维度的支撑强弱和分数来源。".format(
                 source,
                 focus,
                 coverage_text,
                 keyword_text,
                 number_text,
                 assignment_text,
-                score_label,
             ),
             220,
         )
 
     assignment_text = (
-        "作业中仍可见{}。".format(signal_text)
+        "可参考的作业线索为{}。".format(signal_text)
         if signals
-        else "当前缺少案例/数据/反思/资源规划等可验证内容。"
+        else _missing_sentence(assignment_insights)
     )
     return _limit(
-        "优势亮点：{}能够形成基本表述，但与「{}」直接对应的关键信号不足。{}尚未充分呈现工具、案例、数据或行为结果等强支撑证据。".format(
+        "优势亮点：{}已出现与「{}」相关的基础表述。{}但工具方法、量化结果或行为闭环仍不足，支撑力度有限。".format(
             source,
             focus,
             assignment_text,
@@ -324,23 +325,15 @@ def _build_evidence(text, dimension, score, assignment_insights=None):
 
 def _build_comment(score, dimension, transcript_present, assignment_insights=None):
     focus = dimension["focus"]
-    label = score_to_level(score)
-    tone = {
-        "卓越": "该维度表现突出，关键论述完整且有较强支撑。",
-        "优秀": "该维度表现扎实，能够较好支撑整体汇报质量。",
-        "良好": "该维度具备基础支撑，但细节和说服力仍可继续加强。",
-        "合格": "该维度已有基本表达，但论据与完整性偏弱。",
-        "不合格": "该维度材料支撑不足，难以形成有效判断。",
-    }[label]
     signals = select_dimension_signals(dimension, assignment_insights or {}, max_items=2)
     signal_text = _join_signals(signals)
     if signals:
-        follow_up = "建议基于{}继续补充更具体的案例、动作、结果数据和反思链条，让评委能看到从问题到行动再到成效的闭环。".format(signal_text)
+        follow_up = "当前缺口是证据链还不够完整，建议围绕{}补齐动作分工、结果验证和复盘解释。".format(signal_text)
     else:
-        follow_up = "当前缺少案例/数据/反思/资源规划等可验证内容，建议围绕{}补充更具体的材料。".format(focus)
+        follow_up = "{}，建议围绕{}补齐对应材料。".format(_missing_sentence(assignment_insights), focus)
     if not transcript_present:
         follow_up = "当前仅基于已提供材料形成判断，建议后续补充完整录音信息，以便同时评估现场表达、节奏控制和逻辑呈现。"
-    return _limit("改进空间：{} {}".format(tone, follow_up), 180)
+    return _limit("改进空间：{}".format(follow_up), 180)
 
 
 def _build_takeaways(scored_dimensions, assignment_insights=None):
@@ -367,11 +360,11 @@ def _strength_takeaway(item):
     if item["score"] >= 8.0:
         tone = "优势较突出"
     elif item["score"] >= 7.0:
-        tone = "表现较扎实"
+        tone = "证据较扎实"
     elif item["score"] >= 6.0:
-        tone = "具备基础亮点"
+        tone = "已经形成可说明的证据"
     else:
-        tone = "已有可保留线索，但仍需明显补强"
+        tone = "目前仅能确认基础线索"
     return _limit(
         "{}得分{}，{}，材料中可见{}。".format(
             item["name"],
@@ -426,9 +419,12 @@ def _build_overall_comment(
             case_text or "具体业务场景",
             "，关键数据包括{}".format(metric_text) if metric_text else "",
         )
-    strengths_text = "主要亮点或可保留线索集中在{}，说明汇报已经具备一定业务洞察和执行基础。".format(
-        "；".join(condense_takeaway(item) for item in strengths[:2])
-    )
+    missing = summarize_missing_evidence(assignment_insights or {})
+    if len(missing) >= 3:
+        strengths_text = "当前只能确认基础表达，{}，尚不足以证明完整的问题分析和行动闭环。".format("、".join(missing[:4]))
+    else:
+        takeaway = "；".join(condense_takeaway(item) for item in strengths[:2])
+        strengths_text = "主要证据集中在{}，说明汇报已经具备一定业务洞察和执行基础。".format(takeaway)
     improvements_text = "主要提升空间在于{}，后续应把抽象判断转化为可被评委直接看见的证据链。".format(
         "；".join(condense_takeaway(item) for item in improvements[:2])
     )
@@ -458,6 +454,17 @@ def _ordered_unique(values):
 
 def _join_signals(signals):
     return "；".join(signal for signal in signals if signal)
+
+
+def _dimension_completeness(dimension, insights):
+    if dimension["source_key"] == "transcript":
+        return len([key for key in ("expression", "transcript_metrics") if insights.get(key)])
+    return len([key for key in ("case", "tools", "metrics", "actions", "reflection", "planning") if insights.get(key)])
+
+
+def _missing_sentence(assignment_insights):
+    missing = summarize_missing_evidence(assignment_insights or {})
+    return "、".join(missing[:4]) if missing else "需要把现有线索进一步转化为可验证证据"
 
 
 def _has_relevant_number(sentences, keyword_hits):

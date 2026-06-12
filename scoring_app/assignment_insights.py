@@ -18,12 +18,20 @@ REFLECTION_KEYWORDS = ["复盘", "反思", "个人失误", "能力短板", "认�
 PLANNING_KEYWORDS = ["目标", "规划", "里程碑", "资源", "数据权限", "预算", "ERP库存数据", "90天", "四季度"]
 EXPRESSION_KEYWORDS = ["语速偏快", "停顿", "节奏", "PPT", "现场表达", "评委记录", "逻辑清晰"]
 
+MISSING_EVIDENCE_LABELS = [
+    ("case", "缺少具体案例"),
+    ("metrics", "缺少量化数据"),
+    ("actions", "缺少责任分工"),
+    ("planning", "缺少资源规划"),
+    ("reflection", "缺少复盘证据"),
+]
+
 
 def extract_assignment_insights(document_text, transcript_text):
     document_sentences = _split_sentences(document_text)
     transcript_sentences = _split_sentences(transcript_text)
     return {
-        "case": _find_signals(document_sentences, CASE_KEYWORDS, 4),
+        "case": _find_signals(document_sentences, CASE_KEYWORDS, 4, rank=False),
         "tools": _find_signals(document_sentences, TOOL_KEYWORDS, 4),
         "metrics": _extract_metric_signals(document_sentences, 5),
         "actions": _find_signals(document_sentences, ACTION_KEYWORDS, 5),
@@ -54,12 +62,23 @@ def select_dimension_signals(dimension, insights, max_items=3):
 
     selected = []
     for category_name in category_names:
+        signal = _first_new(insights.get(category_name, []), selected)
+        if signal:
+            selected.append(signal)
+        if len(selected) >= max_items:
+            return selected
+    for category_name in category_names:
         for signal in insights.get(category_name, []):
             if signal not in selected:
                 selected.append(signal)
             if len(selected) >= max_items:
                 return selected
     return selected
+
+
+def summarize_missing_evidence(insights):
+    missing = [label for key, label in MISSING_EVIDENCE_LABELS if not insights.get(key)]
+    return missing
 
 
 def format_insight_section(insights):
@@ -101,16 +120,15 @@ def condense_takeaway(text):
     return _limit(sentence, 80)
 
 
-def _find_signals(sentences, keywords, limit):
+def _find_signals(sentences, keywords, limit, rank=True):
     signals = []
     for sentence in sentences:
         if _looks_like_identifier_sentence(sentence):
             continue
         if any(keyword in sentence for keyword in keywords):
             signals.append(_compress_signal(sentence))
-        if len(signals) >= limit:
-            break
-    return _ordered_unique(signals)
+    unique = _ordered_unique(signals)
+    return _rank_and_trim(unique, limit) if rank else unique[:limit]
 
 
 def _extract_metric_signals(sentences, limit):
@@ -119,10 +137,8 @@ def _extract_metric_signals(sentences, limit):
         if _looks_like_identifier_sentence(sentence):
             continue
         if _has_metric(sentence):
-            signals.append(_compress_signal(sentence))
-        if len(signals) >= limit:
-            break
-    return _ordered_unique(signals)
+            signals.append(_compress_signal(sentence, size=120))
+    return _rank_and_trim(_ordered_unique(signals), limit)
 
 
 def _has_metric(text):
@@ -164,6 +180,33 @@ def _compress_signal(sentence, size=80):
             return _limit(cleaned[start:end].strip(" ，,；;"), size)
 
     return _limit(cleaned, size)
+
+
+def _rank_and_trim(signals, limit):
+    ranked = sorted(enumerate(signals), key=lambda item: (-_signal_priority(item[1]), item[0]))
+    return [signal for _, signal in ranked[:limit]]
+
+
+def _signal_priority(signal):
+    score = 0
+    if re.search(r"\d+(?:\.\d+)?\s*%", signal):
+        score += 5
+    if re.search(r"\d+(?:\.\d+)?\s*天", signal):
+        score += 4
+    if re.search(r"(提升|下降|降至|达到|从.+到|->|→)", signal):
+        score += 4
+    if any(keyword in signal for keyword in TOOL_KEYWORDS):
+        score += 3
+    if any(keyword in signal for keyword in ("责任", "分工", "资源", "里程碑", "数据权限")):
+        score += 2
+    return score
+
+
+def _first_new(values, selected):
+    for value in values or []:
+        if value not in selected:
+            return value
+    return None
 
 
 def _ordered_unique(items):
