@@ -157,6 +157,11 @@ class LiveProviderFallbackTestCase(unittest.TestCase):
         self.assertIn("ERP库存数据", user_prompt)
         self.assertIn("语速偏快", user_prompt)
         self.assertIn("缺少案例/数据/反思/资源规划", user_prompt)
+        self.assertIn("优秀 evidence 示例", user_prompt)
+        self.assertIn("优秀 comment 示例", user_prompt)
+        self.assertIn("请模仿上述示例的写法，但不要照抄示例内容", user_prompt)
+        self.assertIn("行动目标符合业务场景", user_prompt)
+        self.assertIn("禁止输出“符合评分标准”", user_prompt)
 
     def test_live_provider_exception_falls_back_and_still_persists_history(self):
         register_response = self.client.post(

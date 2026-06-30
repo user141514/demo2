@@ -123,6 +123,7 @@ def score_llm(state: EvalState) -> EvalState:
             report_strengths=state.strengths or None,
             report_improvements=state.improvements or None,
             assignment_insights=assignment_insights,
+            clean_dimension_text=True,
         )
         state.total_score = result["total_score"]
         state.total_level = result["total_level"]
