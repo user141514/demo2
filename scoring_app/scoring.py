@@ -1,3 +1,4 @@
+import logging
 import re
 from uuid import uuid4
 
@@ -12,6 +13,9 @@ from .core.text_quality import looks_like_garbled_text
 from .live_scoring import live_score_submission
 from .rules import DISCLAIMER, get_report_definition, score_to_level, total_to_level
 from .utils import now_iso
+
+
+logger = logging.getLogger(__name__)
 
 
 class ScoringError(Exception):
@@ -65,6 +69,11 @@ def score_submission(report_type, document_text, transcript_text, metadata):
         llm_provider = live_payload.get("provider", "")
         llm_model = live_payload.get("model", "")
     except Exception:
+        logger.exception(
+            "Live LLM scoring failed; falling back to heuristic scoring. report_type=%s transcript_present=%s",
+            report_type,
+            transcript_present,
+        )
         dimension_results = _build_heuristic_dimensions(
             definition=definition,
             document_text=document_text,
