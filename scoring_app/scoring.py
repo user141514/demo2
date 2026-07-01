@@ -1,3 +1,4 @@
+import logging
 import re
 from uuid import uuid4
 
@@ -12,6 +13,9 @@ from .core.text_quality import looks_like_garbled_text
 from .live_scoring import live_score_submission
 from .rules import DISCLAIMER, get_report_definition, score_to_level, total_to_level
 from .utils import now_iso
+
+
+logger = logging.getLogger(__name__)
 
 
 class ScoringError(Exception):
@@ -65,6 +69,11 @@ def score_submission(report_type, document_text, transcript_text, metadata):
         llm_provider = live_payload.get("provider", "")
         llm_model = live_payload.get("model", "")
     except Exception:
+        logger.exception(
+            "Live LLM scoring failed; falling back to heuristic scoring. report_type=%s transcript_present=%s",
+            report_type,
+            transcript_present,
+        )
         dimension_results = _build_heuristic_dimensions(
             definition=definition,
             document_text=document_text,
@@ -99,6 +108,7 @@ def score_submission(report_type, document_text, transcript_text, metadata):
         report_strengths=report_strengths,
         report_improvements=report_improvements,
         assignment_insights=assignment_insights,
+        clean_dimension_text=(scoring_mode == "live"),
     )
     result["scoring_mode"] = scoring_mode
     result["llm_provider"] = llm_provider
@@ -114,7 +124,10 @@ def _assemble_result(
     report_strengths=None,
     report_improvements=None,
     assignment_insights=None,
+    clean_dimension_text=False,
 ):
+    if clean_dimension_text:
+        dimension_results = [_clean_dimension_text(item) for item in dimension_results]
     scored_dimensions = [item for item in dimension_results if item["score"] is not None]
     if not scored_dimensions:
         raise ScoringError("当前材料无法形成有效评分。")
@@ -498,3 +511,77 @@ def _limit(text, size):
     if len(text) <= size:
         return text
     return text[: size - 1].rstrip() + "…"
+
+
+def _clean_dimension_text(dimension):
+    cleaned = dict(dimension)
+    cleaned["evidence"] = _clean_feedback_text(cleaned.get("evidence") or "")
+    cleaned["comment"] = _clean_feedback_text(cleaned.get("comment") or "")
+    return cleaned
+
+
+def _clean_feedback_text(text):
+    cleaned = _strip_standard_tail(text)
+    cleaned = _strip_score_judgement_tail(cleaned)
+    cleaned = _drop_incomplete_tail(cleaned)
+    return _ensure_sentence_ending(cleaned)
+
+
+def _strip_standard_tail(text):
+    cleaned = str(text or "").strip()
+    cleaned = re.sub(
+        r"[，,；;]?\s*(?:并)?(?:不|未)?(?:符合|达到|满足|属于|处于)"
+        r"(?:(?:[^。！？；;\n\r]{0,60}(?:评分标准|评估标准|评价标准|标准|要求|档位|区间|水平)"
+        r"[^。！？；;\n\r]{0,80})|(?:\s*[“\"「《][^”\"」》]{0,120}[”\"」》]))"
+        r"\s*(?:[。！？；;…]+|\.\.\.)?\s*$",
+        "",
+        cleaned,
+    )
+    cleaned = re.sub(r"[，,；;]\s*([。！？])", r"\1", cleaned)
+    cleaned = re.sub(r"([。！？；;]){2,}", r"\1", cleaned)
+    cleaned = re.sub(r"\s+", " ", cleaned).strip()
+    return cleaned.rstrip(" \t\r\n，,；;：:")
+
+
+def _strip_score_judgement_tail(text):
+    cleaned = str(text or "").strip()
+    cleaned = re.sub(
+        r"[，,；;]?\s*(?:因此|所以|故|由此|据此|综合来看|综合判断)?"
+        r"(?:可)?(?:判定|判断|评定|定位)?(?:为)?"
+        r"[^。！？；;\n\r]{0,80}(?:(?:得分|得)\s*\d+(?:\.\d+)?\s*分|评分\s*(?:为)?\s*\d+(?:\.\d+)?\s*(?:分)?)"
+        r"\s*(?:[。！？；;…]+|\.\.\.)?\s*$",
+        "",
+        cleaned,
+    )
+    return cleaned.rstrip(" \t\r\n，,；;：:")
+
+
+def _drop_incomplete_tail(text):
+    cleaned = str(text or "").strip()
+    if not cleaned:
+        return ""
+    if re.search(r"(?:\.{3,}|…+)\s*$", cleaned):
+        cleaned = re.sub(r"(?:\.{3,}|…+)\s*$", "", cleaned).rstrip()
+        return _truncate_to_last_sentence(cleaned)
+    if re.search(r"[。！？]$", cleaned):
+        return cleaned
+    if re.search(r"[，,；;：:]$", cleaned):
+        return _truncate_to_last_sentence(cleaned)
+    return _truncate_to_last_sentence(cleaned)
+
+
+def _truncate_to_last_sentence(text):
+    cleaned = str(text or "").strip()
+    matches = list(re.finditer(r"[。！？]", cleaned))
+    if not matches:
+        return cleaned
+    return cleaned[: matches[-1].end()].strip()
+
+
+def _ensure_sentence_ending(text):
+    cleaned = str(text or "").strip()
+    if not cleaned:
+        return ""
+    if re.search(r"[。！？]$", cleaned):
+        return cleaned
+    return cleaned.rstrip(" \t\r\n，,；;：:.") + "。"

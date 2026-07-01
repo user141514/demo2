@@ -218,6 +218,210 @@ class ScorePipelineTestCase(unittest.TestCase):
         self.assertIn("材料", first_evidence)
         self.assertIn("相关", first_evidence)
 
+    def test_live_dimension_text_only_strips_trailing_scoring_standard_tail(self):
+        from scoring_app.scoring import score_submission
+
+        dirty_dimension = {
+            "id": 1,
+            "name": "战略链接与知行合一",
+            "group_name": "温故·实战复盘",
+            "group_weight": 55.0,
+            "actual_weight": 30.0,
+            "material_source": "文档",
+            "score": 7.8,
+            "level_label": "良好",
+            "evidence": "优势亮点：行动目标符合业务场景，并已经识别业务痛点。符合评分标准中“能识别主要问题”。后续仍要补充结果验证。因此判定为良好区间中位，得7.8分。",
+            "comment": "改进空间：补充量化数据和复盘解释，行动计划符合岗位实际。同时要说明责任分工。故得7.8分。",
+        }
+
+        with patch(
+            "scoring_app.scoring.live_score_submission",
+            return_value={
+                "dimensions": [dirty_dimension],
+                "overall_comment": "整体表现稳定。",
+                "strengths": ["有业务痛点"],
+                "improvements": ["补充数据"],
+                "mode": "live",
+                "provider": "test-provider",
+                "model": "test-model",
+            },
+        ):
+            payload = score_submission(
+                self.report_type,
+                "战略目标、业务痛点、行动结果和复盘材料完整。" * 4,
+                "",
+                {
+                    "name": "Live Student",
+                    "org": "Delivery Team",
+                    "date": "2026-06-30",
+                    "course_session": "第二次课 · 组织协同",
+                    "note": "",
+                    "pdf_filename": "live.pdf",
+                    "upload_path": "",
+                    "document_preview": "战略目标、业务痛点、行动结果和复盘材料完整。",
+                },
+            )
+
+        dimension = payload["dimensions"][0]
+        self.assertEqual(
+            dimension["evidence"],
+            "优势亮点：行动目标符合业务场景，并已经识别业务痛点。符合评分标准中“能识别主要问题”。后续仍要补充结果验证。",
+        )
+        self.assertEqual(
+            dimension["comment"],
+            "改进空间：补充量化数据和复盘解释，行动计划符合岗位实际。同时要说明责任分工。",
+        )
+
+    def test_live_dimension_text_strips_trailing_score_label_variants(self):
+        from scoring_app.scoring import score_submission
+
+        base_dimension = {
+            "group_name": "温故·实战复盘",
+            "group_weight": 55.0,
+            "actual_weight": 30.0,
+            "material_source": "文档",
+            "score": 6.2,
+            "level_label": "合格",
+        }
+        dirty_dimensions = [
+            dict(
+                base_dimension,
+                id=1,
+                name="直面问题",
+                evidence="优势亮点：学员能从业务场景识别问题。因此评分6.2。",
+                comment="改进空间：补充根因分析和业务数据。所以评分为6.2。",
+            ),
+            dict(
+                base_dimension,
+                id=2,
+                name="创新构想",
+                evidence="优势亮点：方案能连接业务目标。综合评分6.2。",
+                comment="改进空间：增加差异化举措和验证指标。综合评分为6.2。",
+            ),
+        ]
+
+        with patch(
+            "scoring_app.scoring.live_score_submission",
+            return_value={
+                "dimensions": dirty_dimensions,
+                "overall_comment": "整体表现稳定。",
+                "strengths": ["有业务痛点"],
+                "improvements": ["补充数据"],
+                "mode": "live",
+                "provider": "test-provider",
+                "model": "test-model",
+            },
+        ):
+            payload = score_submission(
+                self.report_type,
+                "战略目标、业务痛点、行动结果和复盘材料完整。" * 4,
+                "",
+                {
+                    "name": "Score Tail Student",
+                    "org": "Delivery Team",
+                    "date": "2026-06-30",
+                    "course_session": "第二次课 · 组织协同",
+                    "note": "",
+                    "pdf_filename": "score-tail.pdf",
+                    "upload_path": "",
+                    "document_preview": "战略目标、业务痛点、行动结果和复盘材料完整。",
+                },
+            )
+
+        first, second = payload["dimensions"]
+        self.assertEqual(first["evidence"], "优势亮点：学员能从业务场景识别问题。")
+        self.assertEqual(first["comment"], "改进空间：补充根因分析和业务数据。")
+        self.assertEqual(second["evidence"], "优势亮点：方案能连接业务目标。")
+        self.assertEqual(second["comment"], "改进空间：增加差异化举措和验证指标。")
+
+    def test_dimension_text_drops_incomplete_trailing_fragment(self):
+        from scoring_app.scoring import score_submission
+
+        dirty_dimension = {
+            "id": 1,
+            "name": "战略链接与知行合一",
+            "group_name": "温故·实战复盘",
+            "group_weight": 55.0,
+            "actual_weight": 30.0,
+            "material_source": "文档",
+            "score": 7.2,
+            "level_label": "良好",
+            "evidence": "优势亮点：学员能识别团队管理经验不足。材料也呈现了跨部门沟通短板。缺少第三方或量化数据...",
+            "comment": "改进空间：建议补充测评数据。将各维度得分与现有能力短板",
+        }
+
+        with patch(
+            "scoring_app.scoring.live_score_submission",
+            return_value={
+                "dimensions": [dirty_dimension],
+                "overall_comment": "整体表现稳定。",
+                "strengths": ["有业务痛点"],
+                "improvements": ["补充数据"],
+                "mode": "live",
+                "provider": "test-provider",
+                "model": "test-model",
+            },
+        ):
+            payload = score_submission(
+                self.report_type,
+                "战略目标、业务痛点、行动结果和复盘材料完整。" * 4,
+                "",
+                {
+                    "name": "Fragment Student",
+                    "org": "Delivery Team",
+                    "date": "2026-06-30",
+                    "course_session": "第二次课 · 组织协同",
+                    "note": "",
+                    "pdf_filename": "fragment.pdf",
+                    "upload_path": "",
+                    "document_preview": "战略目标、业务痛点、行动结果和复盘材料完整。",
+                },
+            )
+
+        dimension = payload["dimensions"][0]
+        self.assertEqual(
+            dimension["evidence"],
+            "优势亮点：学员能识别团队管理经验不足。材料也呈现了跨部门沟通短板。",
+        )
+        self.assertEqual(dimension["comment"], "改进空间：建议补充测评数据。")
+        self.assertTrue(dimension["evidence"].endswith("。"))
+        self.assertTrue(dimension["comment"].endswith("。"))
+
+    def test_heuristic_dimension_text_keeps_existing_body_without_bad_punctuation(self):
+        from scoring_app.scoring import score_submission
+
+        document_text = (
+            "星链计划业务痛点符合评分标准中“能识别主要问题，论据基本合理”。"
+            "战略目标、MBA工具、RACI行动、结果指标和业务价值均有描述。"
+            "复盘反思提到个人不足、认知迭代和行为改进。"
+            "知新课题包含战略价值、创新突破、资源规划、里程碑、数据预算和落地时间。"
+        )
+
+        with patch("scoring_app.scoring.live_score_submission", side_effect=RuntimeError("mock")):
+            payload = score_submission(
+                self.report_type,
+                document_text,
+                "",
+                {
+                    "name": "Heuristic Student",
+                    "org": "Delivery Team",
+                    "date": "2026-06-30",
+                    "course_session": "第二次课 · 组织协同",
+                    "note": "",
+                    "pdf_filename": "heuristic.pdf",
+                    "upload_path": "",
+                    "document_preview": document_text[:800],
+                },
+            )
+
+        combined = "\n".join(
+            "{}\n{}".format(item["evidence"], item["comment"])
+            for item in payload["dimensions"]
+        )
+        self.assertIn("符合评分标准", combined)
+        self.assertNotIn("，。", combined)
+        self.assertNotIn("。。", combined)
+
     def test_heuristic_comments_reference_assignment_specific_signals(self):
         from scoring_app.scoring import score_submission
 
